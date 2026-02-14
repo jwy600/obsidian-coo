@@ -8,7 +8,7 @@
 /* Shared textarea styles */
 .coo-query-textarea {
 	width: 100%;
-	resize: vertical;
+	resize: none;
 	font-family: inherit;
 	font-size: var(--font-ui-small);
 	padding: 8px;
@@ -16,6 +16,13 @@
 	border-radius: var(--radius-s);
 	background: var(--background-primary);
 	color: var(--text-normal);
+	overflow-y: auto;
+}
+
+/* Auto-grow textarea in composer */
+.coo-composer-modal .coo-query-textarea {
+	min-height: 48px;
+	max-height: 150px;
 }
 
 .coo-query-textarea:focus {
@@ -28,6 +35,7 @@
 	display: flex;
 	justify-content: flex-end;
 	margin-top: 12px;
+	flex-shrink: 0;
 }
 
 /* Query modal */
@@ -36,10 +44,37 @@
 	margin-bottom: 12px;
 }
 
-/* Composer modal */
+/* Composer modal — translucent backdrop, pinned to bottom edge */
+.modal-container:has(.coo-composer-modal) .modal-bg {
+	opacity: 0.3;
+}
+
+.modal-container:has(.coo-composer-modal) {
+	align-items: flex-end;
+	justify-content: center;
+}
+
+.modal-container:has(.coo-composer-modal) .modal {
+	margin: 0;
+	border-bottom-left-radius: 0;
+	border-bottom-right-radius: 0;
+	max-height: 50vh;
+	width: 100%;
+	max-width: 700px;
+}
+
+/* Composer content: flex column, input at bottom, response grows upward */
+.coo-composer-modal {
+	display: flex;
+	flex-direction: column;
+	max-height: 50vh;
+	overflow: hidden;
+}
+
 .coo-composer-modal h3 {
 	margin-top: 0;
 	margin-bottom: 12px;
+	flex-shrink: 0;
 }
 
 .coo-selection-preview {
@@ -52,6 +87,7 @@
 	max-height: 80px;
 	overflow-y: auto;
 	border-radius: var(--radius-s);
+	flex-shrink: 0;
 }
 
 /* Action bar */
@@ -60,6 +96,7 @@
 	flex-wrap: wrap;
 	gap: 6px;
 	margin-bottom: 12px;
+	flex-shrink: 0;
 }
 
 .coo-action-bar button {
@@ -69,15 +106,16 @@
 	cursor: pointer;
 }
 
-/* Input area */
+/* Input area — stays at bottom */
 .coo-input-area {
 	margin-bottom: 0;
+	flex-shrink: 0;
 }
 
-/* Response area */
+/* Response area — grows upward, takes remaining space */
 .coo-response-area {
-	min-height: 100px;
-	max-height: 400px;
+	flex: 1;
+	min-height: 0;
 	overflow-y: auto;
 	margin-bottom: 12px;
 }

@@ -114,9 +114,33 @@ export default class CooPlugin extends Plugin {
 			},
 		});
 
-		// --- Context menu for Rewrite ---
+		// --- Context menu ---
 		this.registerEvent(
 			this.app.workspace.on('editor-menu', (menu, editor) => {
+				// Discuss: show when text is selected
+				if (editor.somethingSelected()) {
+					menu.addItem((item) => {
+						item
+							.setTitle('Coo: discuss')
+							.setIcon('messages-square')
+							.onClick(() => {
+								if (!this.requireApiKey()) return;
+
+								const ctx = getSelectedTextWithContext(editor);
+								if (!ctx) return;
+
+								new CooComposer(
+									this.app,
+									this.settings,
+									ctx.selectedText,
+									editor,
+									ctx.from,
+								).open();
+							});
+					});
+				}
+
+				// Rewrite: show when paragraph has annotations
 				const cursor = editor.getCursor();
 				const bounds = findParagraphBounds(editor, cursor.line);
 				if (!bounds) return;

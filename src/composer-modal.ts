@@ -42,6 +42,9 @@ export class CooComposer extends Modal {
 		const { contentEl } = this;
 		contentEl.addClass('coo-composer-modal');
 
+		// Position modal centered over the content area (ignoring sidebars)
+		this.alignToContentArea();
+
 		contentEl.createEl('h3', { text: 'Coo: discuss' });
 
 		// Selected text preview
@@ -81,6 +84,12 @@ export class CooComposer extends Modal {
 			}
 		});
 
+		// Auto-grow textarea upward as user types
+		this.textareaEl.addEventListener('input', () => {
+			this.textareaEl.style.height = 'auto';
+			this.textareaEl.style.height = `${this.textareaEl.scrollHeight}px`;
+		});
+
 		// Response area (hidden initially via CSS class)
 		this.responseArea = contentEl.createDiv({ cls: 'coo-response-area coo-hidden' });
 		this.responseText = this.responseArea.createDiv({ cls: 'coo-response-text' });
@@ -102,6 +111,24 @@ export class CooComposer extends Modal {
 
 	onClose(): void {
 		this.contentEl.empty();
+	}
+
+	private alignToContentArea(): void {
+		const rootSplit = document.querySelector('.workspace-split.mod-root');
+		if (!rootSplit) return;
+
+		const rect = rootSplit.getBoundingClientRect();
+		const modalEl = this.containerEl.querySelector('.modal') as HTMLElement | null;
+		if (!modalEl) return;
+
+		// Center the modal within the content area bounds
+		const maxWidth = Math.min(700, rect.width - 32);
+		const left = rect.left + (rect.width - maxWidth) / 2;
+
+		modalEl.style.position = 'fixed';
+		modalEl.style.left = `${left}px`;
+		modalEl.style.width = `${maxWidth}px`;
+		modalEl.style.maxWidth = 'none';
 	}
 
 	private setLoading(loading: boolean): void {
