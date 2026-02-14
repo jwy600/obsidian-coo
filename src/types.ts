@@ -1,18 +1,18 @@
-export type ModelType = 'gpt-5.2' | 'gpt-5-mini';
+export type ModelType = "gpt-5.2" | "gpt-5-mini";
 
-export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high';
+export type ReasoningEffort = "none" | "low" | "medium" | "high";
 
-export type ResponseLanguage = 'en' | 'zh';
+export type ResponseLanguage = "en" | "zh";
 
-export type TranslateLanguage = 'English' | 'Chinese' | 'Spanish' | 'French';
+export type TranslateLanguage = "English" | "Chinese" | "Spanish" | "French";
 
-export type BlockAction = 'translate' | 'example' | 'expand' | 'eli5' | 'ask' | 'rewrite';
-
-export interface StreamCallbacks {
-	onToken: (token: string) => void;
-	onComplete: (fullText: string) => void;
-	onError: (error: Error) => void;
-}
+export type BlockAction =
+	| "translate"
+	| "example"
+	| "expand"
+	| "eli5"
+	| "ask"
+	| "rewrite";
 
 export interface CooSettings {
 	apiKey: string;

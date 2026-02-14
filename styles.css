@@ -1,28 +1,43 @@
 /* Coo Plugin Styles */
 
-/* Utility: hide elements */
+/* ---- Animations ---- */
+
+@keyframes coo-rise-in {
+	from {
+		opacity: 0;
+		transform: translateY(6px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+@keyframes coo-shimmer {
+	0% { background-position: -200% 0; }
+	100% { background-position: 200% 0; }
+}
+
+/* ---- Utility ---- */
+
 .coo-hidden {
 	display: none !important;
 }
 
-/* Shared textarea styles */
+/* ---- Shared textarea (query modal only) ---- */
+
 .coo-query-textarea {
 	width: 100%;
 	resize: none;
 	font-family: inherit;
 	font-size: var(--font-ui-small);
-	padding: 8px;
+	padding: 10px 12px;
 	border: 1px solid var(--background-modifier-border);
-	border-radius: var(--radius-s);
+	border-radius: var(--radius-m);
 	background: var(--background-primary);
 	color: var(--text-normal);
 	overflow-y: auto;
-}
-
-/* Auto-grow textarea in composer */
-.coo-composer-modal .coo-query-textarea {
-	min-height: 48px;
-	max-height: 150px;
+	transition: border-color 0.15s ease;
 }
 
 .coo-query-textarea:focus {
@@ -30,7 +45,8 @@
 	outline: none;
 }
 
-/* Bottom bar (shared) */
+/* ---- Bottom bar ---- */
+
 .coo-bottom-bar {
 	display: flex;
 	justify-content: flex-end;
@@ -38,13 +54,15 @@
 	flex-shrink: 0;
 }
 
-/* Query modal */
+/* ---- Query modal ---- */
+
 .coo-query-modal h3 {
 	margin-top: 0;
 	margin-bottom: 12px;
 }
 
-/* Composer modal — translucent backdrop, pinned to bottom edge */
+/* ---- Composer modal — translucent backdrop, pinned to bottom ---- */
+
 .modal-container:has(.coo-composer-modal) .modal-bg {
 	opacity: 0.3;
 }
@@ -58,12 +76,16 @@
 	margin: 0;
 	border-bottom-left-radius: 0;
 	border-bottom-right-radius: 0;
+	border-top-left-radius: var(--radius-l);
+	border-top-right-radius: var(--radius-l);
 	max-height: 50vh;
 	width: 100%;
 	max-width: 700px;
+	box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.08);
 }
 
-/* Composer content: flex column, input at bottom, response grows upward */
+/* ---- Composer content ---- */
+
 .coo-composer-modal {
 	display: flex;
 	flex-direction: column;
@@ -75,7 +97,14 @@
 	margin-top: 0;
 	margin-bottom: 12px;
 	flex-shrink: 0;
+	font-size: var(--font-ui-small);
+	font-weight: 600;
+	color: var(--text-muted);
+	letter-spacing: 0.02em;
+	text-transform: uppercase;
 }
+
+/* ---- Selection preview ---- */
 
 .coo-selection-preview {
 	padding: 8px 12px;
@@ -84,60 +113,146 @@
 	background: var(--background-secondary);
 	color: var(--text-muted);
 	font-size: var(--font-ui-small);
+	line-height: 1.5;
 	max-height: 80px;
 	overflow-y: auto;
 	border-radius: var(--radius-s);
 	flex-shrink: 0;
 }
 
-/* Action bar */
+/* ---- Composer box (content area + toolbar) ---- */
+
+.coo-input-area {
+	display: flex;
+	flex-direction: column;
+	flex: 1;
+	min-height: 0;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-l);
+	background: var(--background-primary);
+	transition: border-color 0.15s ease;
+}
+
+.coo-input-area:focus-within {
+	border-color: var(--interactive-accent);
+}
+
+/* ---- Content area (input + response in one) ---- */
+
+.coo-content-area {
+	flex: 1;
+	min-height: 36px;
+	max-height: 40vh;
+	overflow-y: auto;
+	padding: 12px 14px 8px;
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+	line-height: 1.6;
+	white-space: pre-wrap;
+	word-wrap: break-word;
+	outline: none;
+	user-select: text;
+	-webkit-user-select: text;
+}
+
+/* Placeholder when empty */
+.coo-content-area:empty::before {
+	content: 'Ask a question about this text...';
+	color: var(--text-faint);
+	pointer-events: none;
+}
+
+/* Loading shimmer when empty and not editable */
+.coo-content-area[contenteditable="false"]:empty::before {
+	content: '';
+	display: block;
+	height: 14px;
+	width: 70%;
+	border-radius: 4px;
+	background: linear-gradient(
+		90deg,
+		var(--background-secondary) 25%,
+		var(--background-modifier-hover) 50%,
+		var(--background-secondary) 75%
+	);
+	background-size: 200% 100%;
+	animation: coo-shimmer 1.4s ease infinite;
+}
+
+/* ---- Toolbar row ---- */
+
+.coo-input-toolbar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 6px 8px;
+	flex-shrink: 0;
+}
+
+/* ---- Action buttons ---- */
+
 .coo-action-bar {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 6px;
-	margin-bottom: 12px;
-	flex-shrink: 0;
+	gap: 4px;
 }
 
 .coo-action-bar button {
 	font-size: var(--font-ui-smaller);
-	padding: 4px 12px;
-	border-radius: var(--radius-s);
-	cursor: pointer;
-}
-
-/* Input area — stays at bottom */
-.coo-input-area {
-	margin-bottom: 0;
-	flex-shrink: 0;
-}
-
-/* Response area — grows upward, takes remaining space */
-.coo-response-area {
-	flex: 1;
-	min-height: 0;
-	overflow-y: auto;
-	margin-bottom: 12px;
-}
-
-.coo-response-text {
-	user-select: text;
-	-webkit-user-select: text;
-	line-height: 1.6;
-	padding: 12px;
+	padding: 3px 10px;
+	border-radius: 100px;
 	border: 1px solid var(--background-modifier-border);
-	border-radius: var(--radius-s);
-	background: var(--background-primary);
-	color: var(--text-normal);
-	white-space: pre-wrap;
-	word-wrap: break-word;
+	background: transparent;
+	color: var(--text-muted);
+	cursor: pointer;
+	transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 
-/* Picked phrase highlight */
+.coo-action-bar button:hover:not(:disabled) {
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+	border-color: var(--interactive-accent);
+}
+
+.coo-action-bar button:active:not(:disabled) {
+	background: var(--background-modifier-active-hover);
+}
+
+.coo-action-bar button:disabled {
+	opacity: 0.4;
+	cursor: not-allowed;
+}
+
+/* ---- Ask button ---- */
+
+.coo-ask-btn {
+	padding: 4px 16px;
+	border-radius: 100px;
+	border: none;
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	font-size: var(--font-ui-smaller);
+	font-weight: 500;
+	cursor: pointer;
+	transition: opacity 0.15s ease;
+}
+
+.coo-ask-btn:hover:not(:disabled) {
+	opacity: 0.85;
+}
+
+.coo-ask-btn:disabled {
+	opacity: 0.4;
+	cursor: not-allowed;
+}
+
+/* ---- Picked phrase highlight ---- */
+
 .coo-picked {
 	background-color: var(--text-accent);
 	color: var(--text-on-accent);
-	padding: 1px 3px;
-	border-radius: 3px;
+	padding: 2px 6px;
+	border-radius: 4px;
 	cursor: default;
+	font-size: var(--font-ui-small);
 }

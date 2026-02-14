@@ -1,8 +1,12 @@
-import { App, Editor, Modal, Notice } from 'obsidian';
-import type { BlockAction, CooSettings } from './types';
-import { chatCompletion, streamChatCompletion } from './ai-client';
-import { getBlockActionPrompt, getDeveloperPrompt, buildActionPrompt } from './prompts';
-import { findParagraphBounds, appendAnnotations } from './editor-ops';
+import { App, Editor, Modal, Notice } from "obsidian";
+import type { BlockAction, CooSettings } from "./types";
+import { chatCompletion } from "./ai-client";
+import {
+	getBlockActionPrompt,
+	getDeveloperPrompt,
+	buildActionPrompt,
+} from "./prompts";
+import { findParagraphBounds, appendAnnotations } from "./editor-ops";
 
 export class CooComposer extends Modal {
 	private settings: CooSettings;
@@ -10,16 +14,14 @@ export class CooComposer extends Modal {
 	private editor: Editor;
 
 	// UI elements
-	private responseArea: HTMLDivElement;
-	private responseText: HTMLDivElement;
-	private textareaEl: HTMLTextAreaElement;
+	private composerBox: HTMLDivElement;
+	private contentArea: HTMLDivElement;
 	private askBtn: HTMLButtonElement;
-	private actionBar: HTMLDivElement;
-	private inputArea: HTMLDivElement;
+	private inputToolbar: HTMLDivElement;
 
 	// State
 	private paragraphEndLine: number;
-	private inPickingPhase = false;
+	private pickingActive = false;
 
 	constructor(
 		app: App,
@@ -40,73 +42,65 @@ export class CooComposer extends Modal {
 
 	onOpen(): void {
 		const { contentEl } = this;
-		contentEl.addClass('coo-composer-modal');
+		contentEl.addClass("coo-composer-modal");
 
 		// Position modal centered over the content area (ignoring sidebars)
 		this.alignToContentArea();
 
-		contentEl.createEl('h3', { text: 'coo discuss' });
+		contentEl.createEl("h3", { text: "coo discuss" });
 
 		// Selected text preview
-		const preview = contentEl.createDiv({ cls: 'coo-selection-preview' });
+		const preview = contentEl.createDiv({ cls: "coo-selection-preview" });
 		preview.setText(
 			this.selectedText.length > 200
-				? this.selectedText.slice(0, 200) + '...'
+				? this.selectedText.slice(0, 200) + "..."
 				: this.selectedText,
 		);
 
-		// Quick-action bar
-		this.actionBar = contentEl.createDiv({ cls: 'coo-action-bar' });
-		const actions: Array<{ label: string; action: BlockAction }> = [
-			{ label: 'Translate', action: 'translate' },
-			{ label: 'Example', action: 'example' },
-			{ label: 'Expand', action: 'expand' },
-			{ label: 'ELI5', action: 'eli5' },
-		];
-		for (const { label, action } of actions) {
-			const btn = this.actionBar.createEl('button', { text: label });
-			btn.addEventListener('click', () => {
-				void this.handleQuickAction(action);
-			});
-		}
+		// Composer box: content area + toolbar
+		this.composerBox = contentEl.createDiv({ cls: "coo-input-area" });
 
-		// Input area (textarea + ask button)
-		this.inputArea = contentEl.createDiv({ cls: 'coo-input-area' });
-		this.textareaEl = this.inputArea.createEl('textarea', {
-			attr: { placeholder: 'Ask a question about this text...', rows: '3' },
+		// Single contenteditable div for both input and response
+		this.contentArea = this.composerBox.createDiv({
+			cls: "coo-content-area",
+			attr: { contenteditable: "true" },
 		});
-		this.textareaEl.addClass('coo-query-textarea');
 
-		this.textareaEl.addEventListener('keydown', (e: KeyboardEvent) => {
-			if (e.key === 'Enter' && !e.shiftKey) {
+		this.contentArea.addEventListener("keydown", (e: KeyboardEvent) => {
+			if (e.key === "Enter" && !e.shiftKey) {
 				e.preventDefault();
 				void this.handleAsk();
 			}
 		});
 
-		// Auto-grow textarea upward as user types
-		this.textareaEl.addEventListener('input', () => {
-			this.textareaEl.style.height = 'auto';
-			this.textareaEl.style.height = `${this.textareaEl.scrollHeight}px`;
+		// Toolbar: quick actions (left) + ask button (right)
+		this.inputToolbar = this.composerBox.createDiv({
+			cls: "coo-input-toolbar",
 		});
 
-		// Response area (hidden initially via CSS class)
-		this.responseArea = contentEl.createDiv({ cls: 'coo-response-area coo-hidden' });
-		this.responseText = this.responseArea.createDiv({ cls: 'coo-response-text' });
+		const actionsGroup = this.inputToolbar.createDiv({
+			cls: "coo-action-bar",
+		});
+		const actions: Array<{ label: string; action: BlockAction }> = [
+			{ label: "Translate", action: "translate" },
+			{ label: "Example", action: "example" },
+			{ label: "Expand", action: "expand" },
+			{ label: "ELI5", action: "eli5" },
+		];
+		for (const { label, action } of actions) {
+			const btn = actionsGroup.createEl("button", { text: label });
+			btn.addEventListener("click", () => {
+				void this.handleQuickAction(action);
+			});
+		}
 
-		// Bottom bar
-		const bottomBar = contentEl.createDiv({ cls: 'coo-bottom-bar' });
-		this.askBtn = bottomBar.createEl('button', { text: 'Ask' });
-		this.askBtn.addClass('mod-cta');
-		this.askBtn.addEventListener('click', () => {
-			if (this.inPickingPhase) {
-				this.close();
-			} else {
-				void this.handleAsk();
-			}
+		this.askBtn = this.inputToolbar.createEl("button", { text: "Ask" });
+		this.askBtn.addClass("coo-ask-btn");
+		this.askBtn.addEventListener("click", () => {
+			void this.handleAsk();
 		});
 
-		setTimeout(() => this.textareaEl.focus(), 50);
+		setTimeout(() => this.contentArea.focus(), 50);
 	}
 
 	onClose(): void {
@@ -114,67 +108,62 @@ export class CooComposer extends Modal {
 	}
 
 	private alignToContentArea(): void {
-		const rootSplit = document.querySelector('.workspace-split.mod-root');
+		const rootSplit = document.querySelector(".workspace-split.mod-root");
 		if (!rootSplit) return;
 
 		const rect = rootSplit.getBoundingClientRect();
-		const modalEl = this.containerEl.querySelector('.modal') as HTMLElement | null;
+		const modalEl = this.containerEl.querySelector(
+			".modal",
+		) as HTMLElement | null;
 		if (!modalEl) return;
 
 		// Center the modal within the content area bounds
 		const maxWidth = Math.min(700, rect.width - 32);
 		const left = rect.left + (rect.width - maxWidth) / 2;
 
-		modalEl.style.position = 'fixed';
+		modalEl.style.position = "fixed";
 		modalEl.style.left = `${left}px`;
 		modalEl.style.width = `${maxWidth}px`;
-		modalEl.style.maxWidth = 'none';
+		modalEl.style.maxWidth = "none";
 	}
 
 	private setLoading(loading: boolean): void {
 		this.askBtn.disabled = loading;
-		this.textareaEl.disabled = loading;
-		const buttons = this.actionBar.querySelectorAll<HTMLButtonElement>('button');
-		buttons.forEach((btn) => {
+		this.contentArea.contentEditable = loading ? "false" : "true";
+		const actionButtons =
+			this.inputToolbar.querySelectorAll<HTMLButtonElement>(
+				".coo-action-bar button",
+			);
+		actionButtons.forEach((btn) => {
 			btn.disabled = loading;
 		});
 		if (loading) {
-			this.askBtn.setText('Thinking...');
+			this.askBtn.setText("Thinking...");
+		} else {
+			this.askBtn.setText("Ask");
 		}
 	}
 
-	private transitionToPickingPhase(): void {
-		this.inPickingPhase = true;
+	private enablePhrasePicking(): void {
+		if (this.pickingActive) return;
+		this.pickingActive = true;
 
-		// Hide input elements, show response
-		this.actionBar.addClass('coo-hidden');
-		this.inputArea.addClass('coo-hidden');
-		this.responseArea.removeClass('coo-hidden');
-
-		// Update button
-		this.askBtn.disabled = false;
-		this.askBtn.setText('Done');
-
-		// Set up phrase picking
-		this.setupPhrasePicking();
-	}
-
-	private setupPhrasePicking(): void {
-		this.responseText.addEventListener('mouseup', () => {
+		this.contentArea.addEventListener("mouseup", () => {
 			const selection = window.getSelection();
 			if (!selection || selection.isCollapsed) return;
 
 			const selectedText = selection.toString().trim();
 			if (!selectedText) return;
 
-			// Check the selection is within our response div
+			// Check the selection is within our content area
 			const range = selection.getRangeAt(0);
-			if (!this.responseText.contains(range.commonAncestorContainer)) return;
+			if (!this.contentArea.contains(range.commonAncestorContainer))
+				return;
 
 			// Wrap selected text in a highlight span
 			try {
-				const span = document.createElement('span');
-				span.className = 'coo-picked';
+				const span = document.createElement("span");
+				span.className = "coo-picked";
 				range.surroundContents(span);
 			} catch {
 				// surroundContents can fail if selection crosses element boundaries.
@@ -184,13 +173,16 @@ export class CooComposer extends Modal {
 			selection.removeAllRanges();
 
 			// Immediately append to annotations in the editor
-			appendAnnotations(this.editor, this.paragraphEndLine, [selectedText]);
+			appendAnnotations(this.editor, this.paragraphEndLine, [
+				selectedText,
+			]);
 			new Notice(`Added: ${selectedText}`, 2000);
 		});
 	}
 
 	private async handleQuickAction(action: BlockAction): Promise<void> {
 		this.setLoading(true);
+		this.contentArea.setText("");
 
 		try {
 			const userPrompt = buildActionPrompt(
@@ -202,60 +194,60 @@ export class CooComposer extends Modal {
 
 			const response = await chatCompletion({
 				settings: this.settings,
-				systemPrompt: getBlockActionPrompt(this.settings.responseLanguage),
+				systemPrompt: getBlockActionPrompt(
+					this.settings.responseLanguage,
+				),
 				userPrompt,
 			});
 
-			this.responseText.setText(response);
-			this.transitionToPickingPhase();
+			this.contentArea.setText(response);
+			this.setLoading(false);
+			this.enablePhrasePicking();
 		} catch (err) {
-			const message = err instanceof Error ? err.message : 'An unexpected error occurred.';
+			const message =
+				err instanceof Error
+					? err.message
+					: "An unexpected error occurred.";
 			new Notice(message, 5000);
 			this.setLoading(false);
 		}
 	}
 
 	private async handleAsk(): Promise<void> {
-		const question = this.textareaEl.value.trim();
+		const question = (this.contentArea.textContent ?? "").trim();
 		if (!question) {
-			new Notice('Please enter a question.');
+			new Notice("Please enter a question.");
 			return;
 		}
 
 		this.setLoading(true);
+		this.contentArea.setText("");
 
-		// Show response area for streaming, hide input
-		this.responseArea.removeClass('coo-hidden');
-		this.responseText.setText('');
-		this.actionBar.addClass('coo-hidden');
-		this.inputArea.addClass('coo-hidden');
+		try {
+			const userPrompt = buildActionPrompt(
+				"ask",
+				this.selectedText,
+				question,
+			);
 
-		const userPrompt = buildActionPrompt('ask', this.selectedText, question);
-
-		await streamChatCompletion(
-			{
+			const response = await chatCompletion({
 				settings: this.settings,
-				systemPrompt: getDeveloperPrompt(this.settings.responseLanguage),
+				systemPrompt: getDeveloperPrompt(
+					this.settings.responseLanguage,
+				),
 				userPrompt,
-			},
-			{
-				onToken: (token) => {
-					this.responseText.appendText(token);
-					// Auto-scroll to bottom
-					this.responseArea.scrollTop = this.responseArea.scrollHeight;
-				},
-				onComplete: () => {
-					this.transitionToPickingPhase();
-				},
-				onError: (err) => {
-					new Notice(err.message, 5000);
-					// Revert to input phase
-					this.actionBar.removeClass('coo-hidden');
-					this.inputArea.removeClass('coo-hidden');
-					this.responseArea.addClass('coo-hidden');
-					this.setLoading(false);
-				},
-			},
-		);
+			});
+
+			this.contentArea.setText(response);
+			this.setLoading(false);
+			this.enablePhrasePicking();
+		} catch (err) {
+			const message =
+				err instanceof Error
+					? err.message
+					: "An unexpected error occurred.";
+			new Notice(message, 5000);
+			this.setLoading(false);
+		}
 	}
 }
