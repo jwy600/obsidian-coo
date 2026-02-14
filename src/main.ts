@@ -1,99 +1,200 @@
-import {App, Editor, MarkdownView, Modal, Notice, Plugin} from 'obsidian';
-import {DEFAULT_SETTINGS, MyPluginSettings, SampleSettingTab} from "./settings";
+import { Editor, Notice, Plugin } from 'obsidian';
+import type { CooSettings } from './types';
+import { DEFAULT_SETTINGS, CooSettingTab } from './settings';
+import { QueryModal } from './query-modal';
+import { CooComposer } from './composer-modal';
+import { chatCompletion } from './ai-client';
+import { getBlockActionPrompt, buildActionPrompt } from './prompts';
+import {
+	getSelectedTextWithContext,
+	findParagraphBounds,
+	getParagraphText,
+	findAnnotationLine,
+	parseAnnotations,
+	replaceParagraphAndRemoveAnnotations,
+} from './editor-ops';
 
-// Remember to rename these classes and interfaces!
+export default class CooPlugin extends Plugin {
+	settings: CooSettings;
 
-export default class MyPlugin extends Plugin {
-	settings: MyPluginSettings;
-
-	async onload() {
+	async onload(): Promise<void> {
 		await this.loadSettings();
 
-		// This creates an icon in the left ribbon.
-		this.addRibbonIcon('dice', 'Sample', (evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			new Notice('This is a notice!');
-		});
-
-		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status bar text');
-
-		// This adds a simple command that can be triggered anywhere
+		// --- Flow A: Ask ---
 		this.addCommand({
-			id: 'open-modal-simple',
-			name: 'Open modal (simple)',
+			id: 'coo-ask',
+			name: 'Ask',
 			callback: () => {
-				new SampleModal(this.app).open();
-			}
+				if (!this.requireApiKey()) return;
+				new QueryModal(this.app, this.settings).open();
+			},
 		});
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'replace-selected',
-			name: 'Replace selected content',
-			editorCallback: (editor: Editor, view: MarkdownView) => {
-				editor.replaceSelection('Sample editor command');
-			}
-		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-modal-complex',
-			name: 'Open modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new SampleModal(this.app).open();
-					}
 
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
+		// --- Flow B: Discuss ---
+		this.addCommand({
+			id: 'coo-discuss',
+			name: 'Discuss',
+			editorCallback: (editor: Editor) => {
+				if (!this.requireApiKey()) return;
+
+				const ctx = getSelectedTextWithContext(editor);
+				if (!ctx) {
+					new Notice('Select some text first.');
+					return;
 				}
-				return false;
-			}
+
+				new CooComposer(
+					this.app,
+					this.settings,
+					ctx.selectedText,
+					editor,
+					ctx.from,
+				).open();
+			},
 		});
 
-		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
+		// --- Flow C: Rewrite ---
+		this.addCommand({
+			id: 'coo-rewrite',
+			name: 'Rewrite with annotations',
+			editorCallback: async (editor: Editor) => {
+				if (!this.requireApiKey()) return;
 
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-			new Notice("Click");
+				const cursor = editor.getCursor();
+				const bounds = findParagraphBounds(editor, cursor.line);
+				if (!bounds) {
+					new Notice('Place your cursor in a paragraph.');
+					return;
+				}
+
+				const annotationLineNum = findAnnotationLine(editor, bounds.endLine);
+				if (annotationLineNum === null) {
+					// eslint-disable-next-line obsidianmd/ui/sentence-case -- "Coo: discuss" is a command name
+					new Notice('No annotations found. Use "Coo: discuss" to add annotations first.');
+					return;
+				}
+
+				const paragraphText = getParagraphText(editor, bounds.startLine, bounds.endLine);
+				const annotationLine = editor.getLine(annotationLineNum);
+				const annotations = parseAnnotations(annotationLine);
+
+				if (annotations.length === 0) {
+					new Notice('Annotation line is empty.');
+					return;
+				}
+
+				new Notice('Rewriting...');
+
+				try {
+					const userPrompt = buildActionPrompt(
+						'rewrite',
+						paragraphText,
+						annotations.join(', '),
+					);
+
+					const rewritten = await chatCompletion({
+						settings: this.settings,
+						systemPrompt: getBlockActionPrompt(this.settings.responseLanguage),
+						userPrompt,
+					});
+
+					replaceParagraphAndRemoveAnnotations(
+						editor,
+						bounds.startLine,
+						bounds.endLine,
+						annotationLineNum,
+						rewritten,
+					);
+
+					new Notice('Rewritten.');
+				} catch (err) {
+					const message = err instanceof Error ? err.message : 'Rewrite failed.';
+					new Notice(message, 5000);
+				}
+			},
 		});
 
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
+		// --- Context menu for Rewrite ---
+		this.registerEvent(
+			this.app.workspace.on('editor-menu', (menu, editor) => {
+				const cursor = editor.getCursor();
+				const bounds = findParagraphBounds(editor, cursor.line);
+				if (!bounds) return;
 
+				const annotationLineNum = findAnnotationLine(editor, bounds.endLine);
+				if (annotationLineNum === null) return;
+
+				const annotationLine = editor.getLine(annotationLineNum);
+				const annotations = parseAnnotations(annotationLine);
+				if (annotations.length === 0) return;
+
+				menu.addItem((item) => {
+					item
+						.setTitle('Coo: rewrite with annotations')
+						.setIcon('pencil')
+						.onClick(async () => {
+							if (!this.requireApiKey()) return;
+
+							const paragraphText = getParagraphText(
+								editor,
+								bounds.startLine,
+								bounds.endLine,
+							);
+
+							new Notice('Rewriting...');
+
+							try {
+								const userPrompt = buildActionPrompt(
+									'rewrite',
+									paragraphText,
+									annotations.join(', '),
+								);
+
+								const rewritten = await chatCompletion({
+									settings: this.settings,
+									systemPrompt: getBlockActionPrompt(this.settings.responseLanguage),
+									userPrompt,
+								});
+
+								replaceParagraphAndRemoveAnnotations(
+									editor,
+									bounds.startLine,
+									bounds.endLine,
+									annotationLineNum,
+									rewritten,
+								);
+
+								new Notice('Rewritten.');
+							} catch (err) {
+								const message = err instanceof Error ? err.message : 'Rewrite failed.';
+								new Notice(message, 5000);
+							}
+						});
+				});
+			}),
+		);
+
+		// Settings tab
+		this.addSettingTab(new CooSettingTab(this.app, this));
 	}
 
-	onunload() {
+	async loadSettings(): Promise<void> {
+		this.settings = {
+			...DEFAULT_SETTINGS,
+			...((await this.loadData()) as Partial<CooSettings> | null),
+		};
 	}
 
-	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<MyPluginSettings>);
-	}
-
-	async saveSettings() {
+	async saveSettings(): Promise<void> {
 		await this.saveData(this.settings);
 	}
-}
 
-class SampleModal extends Modal {
-	constructor(app: App) {
-		super(app);
-	}
-
-	onOpen() {
-		let {contentEl} = this;
-		contentEl.setText('Woah!');
-	}
-
-	onClose() {
-		const {contentEl} = this;
-		contentEl.empty();
+	private requireApiKey(): boolean {
+		if (!this.settings.apiKey) {
+			// eslint-disable-next-line obsidianmd/ui/sentence-case -- "OpenAI API" and "Coo" are proper nouns
+			new Notice('Please set your OpenAI API key in Coo settings.');
+			return false;
+		}
+		return true;
 	}
 }

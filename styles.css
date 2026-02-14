@@ -1,8 +1,105 @@
-/*
+/* Coo Plugin Styles */
 
-This CSS file will be included with your plugin, and
-available in the app when your plugin is enabled.
+/* Utility: hide elements */
+.coo-hidden {
+	display: none !important;
+}
 
-If your plugin does not need CSS, delete this file.
+/* Shared textarea styles */
+.coo-query-textarea {
+	width: 100%;
+	resize: vertical;
+	font-family: inherit;
+	font-size: var(--font-ui-small);
+	padding: 8px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	background: var(--background-primary);
+	color: var(--text-normal);
+}
 
-*/
+.coo-query-textarea:focus {
+	border-color: var(--interactive-accent);
+	outline: none;
+}
+
+/* Bottom bar (shared) */
+.coo-bottom-bar {
+	display: flex;
+	justify-content: flex-end;
+	margin-top: 12px;
+}
+
+/* Query modal */
+.coo-query-modal h3 {
+	margin-top: 0;
+	margin-bottom: 12px;
+}
+
+/* Composer modal */
+.coo-composer-modal h3 {
+	margin-top: 0;
+	margin-bottom: 12px;
+}
+
+.coo-selection-preview {
+	padding: 8px 12px;
+	margin-bottom: 12px;
+	border-left: 3px solid var(--interactive-accent);
+	background: var(--background-secondary);
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+	max-height: 80px;
+	overflow-y: auto;
+	border-radius: var(--radius-s);
+}
+
+/* Action bar */
+.coo-action-bar {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-bottom: 12px;
+}
+
+.coo-action-bar button {
+	font-size: var(--font-ui-smaller);
+	padding: 4px 12px;
+	border-radius: var(--radius-s);
+	cursor: pointer;
+}
+
+/* Input area */
+.coo-input-area {
+	margin-bottom: 0;
+}
+
+/* Response area */
+.coo-response-area {
+	min-height: 100px;
+	max-height: 400px;
+	overflow-y: auto;
+	margin-bottom: 12px;
+}
+
+.coo-response-text {
+	user-select: text;
+	-webkit-user-select: text;
+	line-height: 1.6;
+	padding: 12px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	background: var(--background-primary);
+	color: var(--text-normal);
+	white-space: pre-wrap;
+	word-wrap: break-word;
+}
+
+/* Picked phrase highlight */
+.coo-picked {
+	background-color: var(--text-accent);
+	color: var(--text-on-accent);
+	padding: 1px 3px;
+	border-radius: 3px;
+	cursor: default;
+}
