@@ -18,12 +18,6 @@
 	100% { background-position: 200% 0; }
 }
 
-/* ---- Utility ---- */
-
-.coo-hidden {
-	display: none !important;
-}
-
 /* ---- Shared textarea (query modal only) ---- */
 
 .coo-query-textarea {

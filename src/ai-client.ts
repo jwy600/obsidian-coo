@@ -59,7 +59,7 @@ function mapHttpError(status: number, body: string): string {
 	}
 }
 
-function extractResponseText(responseText: string): string {
+export function extractResponseText(responseText: string): string {
 	const data = JSON.parse(responseText) as {
 		output_text?: string;
 		output?: Array<{
