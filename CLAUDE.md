@@ -14,7 +14,7 @@ The original Coo web app (Next.js + React + Zustand + Supabase + OpenAI). This p
 |---------|-----------------|-------------|
 | System prompts (EN/ZH developer + block-action) | `prompts/*.md` | `src/prompts.ts` |
 | Block actions (translate, example, expand, eli5, ask, rewrite) | `app/api/block-action/route.ts` | `src/prompts.ts` (`buildActionPrompt`) |
-| OpenAI Responses API (streaming + non-streaming) | `lib/api/openAiClient.ts` | `src/ai-client.ts` (raw `fetch`) |
+| OpenAI Responses API (non-streaming) | `lib/api/openAiClient.ts` | `src/ai-client.ts` (raw `fetch`) |
 | Settings (model, reasoning, web search, language) | `lib/store/settings-slice.ts` | `src/settings.ts` |
 
 **What was NOT ported (Obsidian handles natively or not applicable):**
@@ -31,7 +31,8 @@ The original Coo web app (Next.js + React + Zustand + Supabase + OpenAI). This p
 - **Phrase picking via drag-select** — user selects text in the AI response modal, phrases are written as `%%...%%` annotations directly into the editor
 - **`%%...%%` annotation format** — Obsidian comments store picked phrases below paragraphs, invisible in reading mode
 - **Rewrite from annotations** — cursor-in-paragraph command reads `%%...%%`, calls rewrite action, replaces paragraph and removes annotations
-- **Editor context menu** — right-click "Coo: rewrite with annotations" appears when annotations exist
+- **Editor context menu** — right-click "coo rewrite" / "coo discuss" appears contextually
+- **ChatGPT-style composer** — unified contenteditable area with persistent toolbar, pill buttons, shimmer loading, rise-in animation
 
 ## Tech stack
 
@@ -40,7 +41,7 @@ The original Coo web app (Next.js + React + Zustand + Supabase + OpenAI). This p
 - **Package manager**: npm
 - **Runtime**: Obsidian Plugin API (`obsidian` package)
 - **AI API**: OpenAI Responses API (`/v1/responses`) via raw `fetch`
-- **Target**: ES6 + ES2018 (async iteration for streaming), mobile-compatible
+- **Target**: ES6 + ES2018, mobile-compatible
 
 ## Commands
 
@@ -57,11 +58,11 @@ npm run lint         # eslint (includes obsidian-specific rules)
 src/
   main.ts            # Plugin lifecycle + 3 commands + context menu (~200 lines)
   settings.ts        # CooSettings interface, defaults, settings tab (~130 lines)
-  types.ts           # Shared types: ModelType, BlockAction, CooSettings, etc.
+  types.ts           # Shared types: ModelType, BlockAction, CooSettings (~25 lines)
   prompts.ts         # System prompts (EN/ZH) + buildActionPrompt() (~100 lines)
-  ai-client.ts       # OpenAI Responses API: chatCompletion + streamChatCompletion (~190 lines)
+  ai-client.ts       # OpenAI Responses API: chatCompletion (non-streaming only) (~130 lines)
   query-modal.ts     # Flow A modal: text input → AI → create note (~100 lines)
-  composer-modal.ts  # Flow B modal: quick actions / ask → phrase picking (~230 lines)
+  composer-modal.ts  # Flow B modal: ChatGPT-style composer with contenteditable area (~250 lines)
   editor-ops.ts      # Paragraph detection, %%annotation%% parsing/editing (~140 lines)
 ```
 
@@ -73,13 +74,13 @@ Output: `main.js` + `manifest.json` + `styles.css` at repo root (loaded by Obsid
 |------|---------|
 | `src/main.ts` | `CooPlugin` class: `onload` registers 3 commands (`coo-ask`, `coo-discuss`, `coo-rewrite`) + editor context menu |
 | `src/settings.ts` | `CooSettings` interface, `DEFAULT_SETTINGS`, `CooSettingTab` with 6 settings |
-| `src/ai-client.ts` | `chatCompletion()` (non-streaming) and `streamChatCompletion()` (SSE streaming) via raw fetch to Responses API |
+| `src/ai-client.ts` | `chatCompletion()` (non-streaming only) via raw fetch to Responses API |
 | `src/prompts.ts` | Developer + block-action system prompts, `buildActionPrompt()` for all 6 actions |
 | `src/query-modal.ts` | Flow A: "Coo: Ask" — question input → creates new note with response |
-| `src/composer-modal.ts` | Flow B: "Coo: Discuss" — quick actions + ask → phrase picking via drag-select |
+| `src/composer-modal.ts` | Flow B: "Coo: Discuss" — ChatGPT-style composer with contenteditable area, quick actions, phrase picking |
 | `src/editor-ops.ts` | Paragraph bounds detection, `%%...%%` annotation CRUD, paragraph replacement |
 | `manifest.json` | Plugin metadata (`obsidian-coo`) |
-| `styles.css` | Modal layout, action bar, response area, `.coo-picked` highlight, `.coo-hidden` utility |
+| `styles.css` | Composer box, pill buttons, animations (rise-in, shimmer), `.coo-picked` highlight |
 
 ## Three user flows
 
@@ -87,10 +88,11 @@ Output: `main.js` + `manifest.json` + `styles.css` at repo root (loaded by Obsid
 Command palette (works from anywhere) → modal with textarea → Submit → AI generates structured response → new `.md` note created and opened. Filename derived from the query.
 
 ### Flow B — "Coo: Discuss" (`coo-discuss`)
-Select text in editor → command palette → modal with:
-- **Quick actions**: Translate / Example / Expand / ELI5 (non-streaming, block-action prompt)
-- **Ask**: free-form question (streaming, developer prompt)
-- After response, enters **phrase picking** mode: drag-select text → highlighted with `.coo-picked` → immediately appended as `%%phrase1, phrase2%%` annotation below the source paragraph. Each pick is a separate editor operation (undoable). Duplicates are skipped.
+Select text in editor → command palette → ChatGPT-style composer modal with:
+- **Single contenteditable area** — serves as both input and response display. User types a question or clicks a quick action; AI response fills the same area. User can edit the response text directly.
+- **Toolbar row** (always visible) — quick action pill buttons (Translate / Example / Expand / ELI5) on the left, Ask button on the right.
+- **Quick actions**: non-streaming, block-action prompt. **Ask**: non-streaming, developer prompt.
+- After response, **phrase picking** activates: drag-select text → highlighted with `.coo-picked` → immediately appended as `%%phrase1, phrase2%%` annotation below the source paragraph. Each pick is a separate editor operation (undoable). Duplicates are skipped.
 
 ### Flow C — "Coo: Rewrite" (`coo-rewrite`)
 Cursor in a paragraph that has a `%%...%%` annotation line below it → command palette (or right-click context menu) → AI rewrites the paragraph incorporating the annotations → paragraph replaced, annotation line removed. Ctrl+Z undoes.
@@ -122,10 +124,9 @@ Some paragraph text that the user discussed with AI.
 ## API client details
 
 - **Endpoint**: `POST https://api.openai.com/v1/responses` (Responses API, not Chat Completions)
-- **Non-streaming** (`chatCompletion`): uses `fetch`, parses `output_text` or falls back to `output[].content[].text`
-- **Streaming** (`streamChatCompletion`): uses `fetch` + `ReadableStream`, listens for `response.output_text.delta` SSE events
+- **Non-streaming only** (`chatCompletion`): uses `fetch`, parses `output_text` or falls back to `output[].content[].text`
 - **Error handling**: extracts error message from response body, maps HTTP codes to user-friendly notices
-- Uses `fetch` instead of Obsidian's `requestUrl` because `requestUrl` doesn't support streaming or the Responses API reliably
+- Uses `fetch` instead of Obsidian's `requestUrl` because `requestUrl` doesn't support the Responses API reliably
 
 ## Architecture guidelines
 
