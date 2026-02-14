@@ -23,7 +23,7 @@ export default class CooPlugin extends Plugin {
 		// --- Flow A: Ask ---
 		this.addCommand({
 			id: 'coo-ask',
-			name: 'Ask',
+			name: 'ask',
 			callback: () => {
 				if (!this.requireApiKey()) return;
 				new QueryModal(this.app, this.settings).open();
@@ -33,7 +33,7 @@ export default class CooPlugin extends Plugin {
 		// --- Flow B: Discuss ---
 		this.addCommand({
 			id: 'coo-discuss',
-			name: 'Discuss',
+			name: 'discuss',
 			editorCallback: (editor: Editor) => {
 				if (!this.requireApiKey()) return;
 
@@ -56,7 +56,7 @@ export default class CooPlugin extends Plugin {
 		// --- Flow C: Rewrite ---
 		this.addCommand({
 			id: 'coo-rewrite',
-			name: 'Rewrite with annotations',
+			name: 'rewrite',
 			editorCallback: async (editor: Editor) => {
 				if (!this.requireApiKey()) return;
 
@@ -69,8 +69,7 @@ export default class CooPlugin extends Plugin {
 
 				const annotationLineNum = findAnnotationLine(editor, bounds.endLine);
 				if (annotationLineNum === null) {
-					// eslint-disable-next-line obsidianmd/ui/sentence-case -- "Coo: discuss" is a command name
-					new Notice('No annotations found. Use "Coo: discuss" to add annotations first.');
+					new Notice('No annotations found. Use coo discuss to add annotations first.');
 					return;
 				}
 
@@ -121,7 +120,7 @@ export default class CooPlugin extends Plugin {
 				if (editor.somethingSelected()) {
 					menu.addItem((item) => {
 						item
-							.setTitle('Coo: discuss')
+							.setTitle('coo discuss')
 							.setIcon('messages-square')
 							.onClick(() => {
 								if (!this.requireApiKey()) return;
@@ -154,7 +153,7 @@ export default class CooPlugin extends Plugin {
 
 				menu.addItem((item) => {
 					item
-						.setTitle('Coo: rewrite with annotations')
+						.setTitle('coo rewrite')
 						.setIcon('pencil')
 						.onClick(async () => {
 							if (!this.requireApiKey()) return;
@@ -215,8 +214,8 @@ export default class CooPlugin extends Plugin {
 
 	private requireApiKey(): boolean {
 		if (!this.settings.apiKey) {
-			// eslint-disable-next-line obsidianmd/ui/sentence-case -- "OpenAI API" and "Coo" are proper nouns
-			new Notice('Please set your OpenAI API key in Coo settings.');
+			// eslint-disable-next-line obsidianmd/ui/sentence-case -- "OpenAI API" is a proper noun
+			new Notice('Please set your OpenAI API key in coo settings.');
 			return false;
 		}
 		return true;

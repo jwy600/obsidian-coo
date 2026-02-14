@@ -33,7 +33,7 @@ export class QueryModal extends Modal {
 		const { contentEl } = this;
 		contentEl.addClass('coo-query-modal');
 
-		contentEl.createEl('h3', { text: 'Coo: ask' });
+		contentEl.createEl('h3', { text: 'coo ask' });
 
 		this.textareaEl = contentEl.createEl('textarea', {
 			attr: { placeholder: 'Ask anything...', rows: '4' },

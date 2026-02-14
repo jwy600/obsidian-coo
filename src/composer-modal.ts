@@ -45,7 +45,7 @@ export class CooComposer extends Modal {
 		// Position modal centered over the content area (ignoring sidebars)
 		this.alignToContentArea();
 
-		contentEl.createEl('h3', { text: 'Coo: discuss' });
+		contentEl.createEl('h3', { text: 'coo discuss' });
 
 		// Selected text preview
 		const preview = contentEl.createDiv({ cls: 'coo-selection-preview' });
