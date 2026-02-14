@@ -83,7 +83,7 @@ export class QueryModal extends Modal {
 			const baseName = sanitizeFilename(query) || 'Coo response';
 			const filePath = await uniqueFilename(this.app, baseName);
 
-			const fileContent = `# ${query}\n\n${response}\n`;
+			const fileContent = `${response}\n`;
 			const file = await this.app.vault.create(filePath, fileContent);
 
 			const leaf = this.app.workspace.getLeaf(true);

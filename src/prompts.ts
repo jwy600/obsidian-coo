@@ -21,7 +21,7 @@ const DEVELOPER_PROMPT_EN = `You are a knowledgeable assistant that provides dee
 <formatting>
 - Use Markdown **only where semantically correct** (e.g., \`inline code\`, \`\`\`code fences\`\`\`, lists, tables)
 - Use backticks to format file, directory, function, and class names
-- Use \\( and \\) for inline math, \\[ and \\] for block math
+- Use $ for inline math and $$ for block math (Obsidian MathJax format). NEVER use \\( \\) or \\[ \\] delimiters.
 - NEVER use numbered lists (1, 2, 3). If sequence matters, use letters (a, b, c) instead
 </formatting>
 
@@ -53,7 +53,7 @@ const DEVELOPER_PROMPT_ZH = `You are a knowledgeable assistant that provides dee
 <formatting>
 - Use Markdown **only where semantically correct** (e.g., \`inline code\`, \`\`\`code fences\`\`\`, lists, tables)
 - Use backticks to format file, directory, function, and class names
-- Use \\( and \\) for inline math, \\[ and \\] for block math
+- Use $ for inline math and $$ for block math (Obsidian MathJax format). NEVER use \\( \\) or \\[ \\] delimiters.
 - NEVER use numbered lists (1, 2, 3). If sequence matters, use letters (a, b, c) instead
 </formatting>
 
