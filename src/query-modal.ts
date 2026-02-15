@@ -1,14 +1,13 @@
-import { App, Modal, Notice } from 'obsidian';
-import type { CooSettings } from './types';
-import { chatCompletion } from './ai-client';
-import { getDeveloperPrompt } from './prompts';
+import { App, Modal, Notice } from "obsidian";
+import type { CooSettings } from "./types";
+import { chatCompletion } from "./ai-client";
+import { getDeveloperPrompt } from "./prompts";
 
 function sanitizeFilename(text: string): string {
 	return text
-		.replace(/[\\/:*?"<>|#^[\]]/g, '')
-		.replace(/\s+/g, ' ')
-		.trim()
-		.slice(0, 60);
+		.replace(/[\\/:*?"<>|#^[\]]/g, "")
+		.replace(/\s+/g, " ")
+		.trim();
 }
 
 async function uniqueFilename(app: App, baseName: string): Promise<string> {
@@ -31,26 +30,26 @@ export class QueryModal extends Modal {
 
 	onOpen(): void {
 		const { contentEl } = this;
-		contentEl.addClass('coo-query-modal');
+		contentEl.addClass("coo-query-modal");
 
-		contentEl.createEl('h3', { text: 'coo ask' });
+		contentEl.createEl("h3", { text: "coo ask" });
 
-		this.textareaEl = contentEl.createEl('textarea', {
-			attr: { placeholder: 'Ask anything...', rows: '4' },
+		this.textareaEl = contentEl.createEl("textarea", {
+			attr: { placeholder: "Ask anything...", rows: "4" },
 		});
-		this.textareaEl.addClass('coo-query-textarea');
+		this.textareaEl.addClass("coo-query-textarea");
 
-		this.textareaEl.addEventListener('keydown', (e: KeyboardEvent) => {
-			if (e.key === 'Enter' && !e.shiftKey) {
+		this.textareaEl.addEventListener("keydown", (e: KeyboardEvent) => {
+			if (e.key === "Enter" && !e.shiftKey) {
 				e.preventDefault();
 				void this.handleSubmit();
 			}
 		});
 
-		const btnContainer = contentEl.createDiv({ cls: 'coo-bottom-bar' });
-		this.submitBtn = btnContainer.createEl('button', { text: 'Submit' });
-		this.submitBtn.addClass('mod-cta');
-		this.submitBtn.addEventListener('click', () => {
+		const btnContainer = contentEl.createDiv({ cls: "coo-bottom-bar" });
+		this.submitBtn = btnContainer.createEl("button", { text: "Submit" });
+		this.submitBtn.addClass("mod-cta");
+		this.submitBtn.addEventListener("click", () => {
 			void this.handleSubmit();
 		});
 
@@ -65,22 +64,24 @@ export class QueryModal extends Modal {
 	private async handleSubmit(): Promise<void> {
 		const query = this.textareaEl.value.trim();
 		if (!query) {
-			new Notice('Please enter a question.');
+			new Notice("Please enter a question.");
 			return;
 		}
 
 		this.submitBtn.disabled = true;
-		this.submitBtn.setText('Thinking...');
+		this.submitBtn.setText("Thinking...");
 		this.textareaEl.disabled = true;
 
 		try {
 			const response = await chatCompletion({
 				settings: this.settings,
-				systemPrompt: getDeveloperPrompt(this.settings.responseLanguage),
+				systemPrompt: getDeveloperPrompt(
+					this.settings.responseLanguage,
+				),
 				userPrompt: query,
 			});
 
-			const baseName = sanitizeFilename(query) || 'Coo response';
+			const baseName = sanitizeFilename(query) || "Coo response";
 			const filePath = await uniqueFilename(this.app, baseName);
 
 			const fileContent = `${response}\n`;
@@ -91,10 +92,13 @@ export class QueryModal extends Modal {
 
 			this.close();
 		} catch (err) {
-			const message = err instanceof Error ? err.message : 'An unexpected error occurred.';
+			const message =
+				err instanceof Error
+					? err.message
+					: "An unexpected error occurred.";
 			new Notice(message, 5000);
 			this.submitBtn.disabled = false;
-			this.submitBtn.setText('Submit');
+			this.submitBtn.setText("Submit");
 			this.textareaEl.disabled = false;
 		}
 	}
