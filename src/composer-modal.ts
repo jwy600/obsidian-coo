@@ -213,7 +213,7 @@ export class CooComposer extends Modal {
 	}
 
 	private async handleAsk(): Promise<void> {
-		const question = (this.contentArea.textContent ?? "").trim();
+		const question = this.contentArea.getText().trim();
 		if (!question) {
 			new Notice("Please enter a question.");
 			return;

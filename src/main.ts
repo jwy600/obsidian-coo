@@ -60,22 +60,7 @@ export default class CooPlugin extends Plugin {
 			id: "coo-discuss",
 			name: "discuss",
 			editorCallback: (editor: Editor) => {
-				if (!this.requireApiKey()) return;
-
-				const ctx = getSelectedTextWithContext(editor);
-				if (!ctx) {
-					new Notice("Select some text first.");
-					return;
-				}
-
-				new CooComposer(
-					this.app,
-					this.settings,
-					ctx.selectedText,
-					editor,
-					ctx.from,
-					this.developerPrompt,
-				).open();
+				this.openDiscuss(editor);
 			},
 		});
 
@@ -104,11 +89,6 @@ export default class CooPlugin extends Plugin {
 					return;
 				}
 
-				const paragraphText = getParagraphText(
-					editor,
-					bounds.startLine,
-					bounds.endLine,
-				);
 				const annotationLine = editor.getLine(annotationLineNum);
 				const annotations = parseAnnotations(annotationLine);
 
@@ -117,42 +97,12 @@ export default class CooPlugin extends Plugin {
 					return;
 				}
 
-				// Strip markdown prefix (e.g. "- ", "## ") so the AI
-				// rewrites only the content, then re-add it after.
-				const { prefix, content } =
-					extractMarkdownPrefix(paragraphText);
-
-				new Notice("Rewriting...");
-
-				try {
-					const userPrompt = buildActionPrompt(
-						"rewrite",
-						content,
-						annotations.join(", "),
-					);
-
-					const rewritten = await chatCompletion({
-						settings: this.settings,
-						systemPrompt: getBlockActionPrompt(
-							this.settings.responseLanguage,
-						),
-						userPrompt,
-					});
-
-					replaceParagraphAndRemoveAnnotations(
-						editor,
-						bounds.startLine,
-						bounds.endLine,
-						annotationLineNum,
-						prefix + rewritten,
-					);
-
-					new Notice("Rewritten.");
-				} catch (err) {
-					const message =
-						err instanceof Error ? err.message : "Rewrite failed.";
-					new Notice(message, 5000);
-				}
+				await this.performRewrite(
+					editor,
+					bounds,
+					annotationLineNum,
+					annotations,
+				);
 			},
 		});
 
@@ -165,19 +115,7 @@ export default class CooPlugin extends Plugin {
 						item.setTitle("coo discuss")
 							.setIcon("messages-square")
 							.onClick(() => {
-								if (!this.requireApiKey()) return;
-
-								const ctx = getSelectedTextWithContext(editor);
-								if (!ctx) return;
-
-								new CooComposer(
-									this.app,
-									this.settings,
-									ctx.selectedText,
-									editor,
-									ctx.from,
-									this.developerPrompt,
-								).open();
+								this.openDiscuss(editor);
 							});
 					});
 				}
@@ -202,48 +140,12 @@ export default class CooPlugin extends Plugin {
 						.setIcon("pencil")
 						.onClick(async () => {
 							if (!this.requireApiKey()) return;
-
-							const paragraphText = getParagraphText(
+							await this.performRewrite(
 								editor,
-								bounds.startLine,
-								bounds.endLine,
+								bounds,
+								annotationLineNum,
+								annotations,
 							);
-							const { prefix, content } =
-								extractMarkdownPrefix(paragraphText);
-
-							new Notice("Rewriting...");
-
-							try {
-								const userPrompt = buildActionPrompt(
-									"rewrite",
-									content,
-									annotations.join(", "),
-								);
-
-								const rewritten = await chatCompletion({
-									settings: this.settings,
-									systemPrompt: getBlockActionPrompt(
-										this.settings.responseLanguage,
-									),
-									userPrompt,
-								});
-
-								replaceParagraphAndRemoveAnnotations(
-									editor,
-									bounds.startLine,
-									bounds.endLine,
-									annotationLineNum,
-									prefix + rewritten,
-								);
-
-								new Notice("Rewritten.");
-							} catch (err) {
-								const message =
-									err instanceof Error
-										? err.message
-										: "Rewrite failed.";
-								new Notice(message, 5000);
-							}
 						});
 				});
 			}),
@@ -286,6 +188,71 @@ export default class CooPlugin extends Plugin {
 
 	async saveSettings(): Promise<void> {
 		await this.saveData(this.settings);
+	}
+
+	private openDiscuss(editor: Editor): void {
+		if (!this.requireApiKey()) return;
+
+		const ctx = getSelectedTextWithContext(editor);
+		if (!ctx) {
+			new Notice("Select some text first.");
+			return;
+		}
+
+		new CooComposer(
+			this.app,
+			this.settings,
+			ctx.selectedText,
+			editor,
+			ctx.from,
+			this.developerPrompt,
+		).open();
+	}
+
+	private async performRewrite(
+		editor: Editor,
+		bounds: { startLine: number; endLine: number },
+		annotationLineNum: number,
+		annotations: string[],
+	): Promise<void> {
+		const paragraphText = getParagraphText(
+			editor,
+			bounds.startLine,
+			bounds.endLine,
+		);
+		const { prefix, content } = extractMarkdownPrefix(paragraphText);
+
+		new Notice("Rewriting...");
+
+		try {
+			const userPrompt = buildActionPrompt(
+				"rewrite",
+				content,
+				annotations.join(", "),
+			);
+
+			const rewritten = await chatCompletion({
+				settings: this.settings,
+				systemPrompt: getBlockActionPrompt(
+					this.settings.responseLanguage,
+				),
+				userPrompt,
+			});
+
+			replaceParagraphAndRemoveAnnotations(
+				editor,
+				bounds.startLine,
+				bounds.endLine,
+				annotationLineNum,
+				prefix + rewritten,
+			);
+
+			new Notice("Rewritten.");
+		} catch (err) {
+			const message =
+				err instanceof Error ? err.message : "Rewrite failed.";
+			new Notice(message, 5000);
+		}
 	}
 
 	private requireApiKey(): boolean {
