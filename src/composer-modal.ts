@@ -18,7 +18,6 @@ export class CooComposer extends Modal {
 
 	// State
 	private paragraphEndLine: number;
-	private pickingActive = false;
 
 	constructor(
 		app: App,
@@ -70,6 +69,38 @@ export class CooComposer extends Modal {
 				e.preventDefault();
 				void this.handleAsk();
 			}
+		});
+
+		// Phrase picking: drag-select text in the response area to add annotations
+		this.contentArea.addEventListener("mouseup", () => {
+			const selection = window.getSelection();
+			if (!selection || selection.isCollapsed) return;
+
+			const selectedText = selection.toString().trim();
+			if (!selectedText) return;
+
+			// Check the selection is within our content area
+			const range = selection.getRangeAt(0);
+			if (!this.contentArea.contains(range.commonAncestorContainer))
+				return;
+
+			// Wrap selected text in a highlight span
+			try {
+				const span = document.createElement("span");
+				span.className = "coo-picked";
+				range.surroundContents(span);
+			} catch {
+				// surroundContents can fail if selection crosses element boundaries.
+				// In that case, still add the annotation but skip visual highlighting.
+			}
+
+			selection.removeAllRanges();
+
+			// Immediately append to annotations in the editor
+			appendAnnotations(this.editor, this.paragraphEndLine, [
+				selectedText,
+			]);
+			new Notice(`Added: ${selectedText}`, 2000);
 		});
 
 		// Toolbar: quick actions (left) + ask button (right)
@@ -143,42 +174,6 @@ export class CooComposer extends Modal {
 		}
 	}
 
-	private enablePhrasePicking(): void {
-		if (this.pickingActive) return;
-		this.pickingActive = true;
-
-		this.contentArea.addEventListener("mouseup", () => {
-			const selection = window.getSelection();
-			if (!selection || selection.isCollapsed) return;
-
-			const selectedText = selection.toString().trim();
-			if (!selectedText) return;
-
-			// Check the selection is within our content area
-			const range = selection.getRangeAt(0);
-			if (!this.contentArea.contains(range.commonAncestorContainer))
-				return;
-
-			// Wrap selected text in a highlight span
-			try {
-				const span = document.createElement("span");
-				span.className = "coo-picked";
-				range.surroundContents(span);
-			} catch {
-				// surroundContents can fail if selection crosses element boundaries.
-				// In that case, still add the annotation but skip visual highlighting.
-			}
-
-			selection.removeAllRanges();
-
-			// Immediately append to annotations in the editor
-			appendAnnotations(this.editor, this.paragraphEndLine, [
-				selectedText,
-			]);
-			new Notice(`Added: ${selectedText}`, 2000);
-		});
-	}
-
 	private async handleQuickAction(action: BlockAction): Promise<void> {
 		this.setLoading(true);
 		this.contentArea.setText("");
@@ -201,7 +196,6 @@ export class CooComposer extends Modal {
 
 			this.contentArea.setText(response);
 			this.setLoading(false);
-			this.enablePhrasePicking();
 		} catch (err) {
 			const message =
 				err instanceof Error
@@ -237,7 +231,6 @@ export class CooComposer extends Modal {
 
 			this.contentArea.setText(response);
 			this.setLoading(false);
-			this.enablePhrasePicking();
 		} catch (err) {
 			const message =
 				err instanceof Error

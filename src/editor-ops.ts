@@ -1,17 +1,17 @@
 import { Editor } from "obsidian";
 
-export interface SelectionContext {
+interface SelectionContext {
 	selectedText: string;
 	from: { line: number; ch: number };
 	to: { line: number; ch: number };
 }
 
-export interface ParagraphBounds {
+interface ParagraphBounds {
 	startLine: number;
 	endLine: number;
 }
 
-export interface MarkdownPrefix {
+interface MarkdownPrefix {
 	prefix: string;
 	content: string;
 }
