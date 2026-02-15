@@ -1,4 +1,4 @@
-import { Editor } from 'obsidian';
+import { Editor } from "obsidian";
 
 export interface SelectionContext {
 	selectedText: string;
@@ -15,14 +15,16 @@ export interface ParagraphBounds {
  * Get the current editor selection with position info.
  * Returns null if nothing is selected.
  */
-export function getSelectedTextWithContext(editor: Editor): SelectionContext | null {
+export function getSelectedTextWithContext(
+	editor: Editor,
+): SelectionContext | null {
 	const selectedText = editor.getSelection().trim();
 	if (!selectedText) return null;
 
 	return {
 		selectedText,
-		from: editor.getCursor('from'),
-		to: editor.getCursor('to'),
+		from: editor.getCursor("from"),
+		to: editor.getCursor("to"),
 	};
 }
 
@@ -31,7 +33,7 @@ export function getSelectedTextWithContext(editor: Editor): SelectionContext | n
  */
 function isAnnotationLine(line: string): boolean {
 	const trimmed = line.trim();
-	return trimmed.startsWith('%%') && trimmed.endsWith('%%');
+	return trimmed.startsWith("%%") && trimmed.endsWith("%%");
 }
 
 /**
@@ -45,7 +47,10 @@ function isEmptyLine(line: string): boolean {
  * Find the paragraph bounds around a given line.
  * A paragraph is a contiguous block of non-empty, non-annotation lines.
  */
-export function findParagraphBounds(editor: Editor, lineNum: number): ParagraphBounds | null {
+export function findParagraphBounds(
+	editor: Editor,
+	lineNum: number,
+): ParagraphBounds | null {
 	const totalLines = editor.lineCount();
 	const currentLine = editor.getLine(lineNum);
 
@@ -71,21 +76,47 @@ export function findParagraphBounds(editor: Editor, lineNum: number): ParagraphB
 }
 
 /**
+ * Like findParagraphBounds, but if the cursor is on an annotation line,
+ * falls back to the paragraph directly above it. This lets the rewrite
+ * command work when the cursor lands on the %%...%% line after phrase picking.
+ */
+export function findParagraphBoundsNear(
+	editor: Editor,
+	lineNum: number,
+): ParagraphBounds | null {
+	const bounds = findParagraphBounds(editor, lineNum);
+	if (bounds) return bounds;
+
+	if (lineNum > 0 && isAnnotationLine(editor.getLine(lineNum))) {
+		return findParagraphBounds(editor, lineNum - 1);
+	}
+
+	return null;
+}
+
+/**
  * Get paragraph text from startLine to endLine (inclusive).
  */
-export function getParagraphText(editor: Editor, startLine: number, endLine: number): string {
+export function getParagraphText(
+	editor: Editor,
+	startLine: number,
+	endLine: number,
+): string {
 	const lines: string[] = [];
 	for (let i = startLine; i <= endLine; i++) {
 		lines.push(editor.getLine(i));
 	}
-	return lines.join('\n');
+	return lines.join("\n");
 }
 
 /**
  * Find an annotation line immediately after the paragraph end.
  * Returns the line number if found, null otherwise.
  */
-export function findAnnotationLine(editor: Editor, paragraphEndLine: number): number | null {
+export function findAnnotationLine(
+	editor: Editor,
+	paragraphEndLine: number,
+): number | null {
 	const nextLine = paragraphEndLine + 1;
 	if (nextLine >= editor.lineCount()) return null;
 
@@ -103,7 +134,10 @@ export function parseAnnotations(line: string): string[] {
 	const trimmed = line.trim();
 	const inner = trimmed.slice(2, -2).trim();
 	if (!inner) return [];
-	return inner.split(',').map(s => s.trim()).filter(s => s.length > 0);
+	return inner
+		.split(",")
+		.map((s) => s.trim())
+		.filter((s) => s.length > 0);
 }
 
 /**
@@ -111,7 +145,7 @@ export function parseAnnotations(line: string): string[] {
  * ["a", "b"] → "%%a, b%%"
  */
 export function formatAnnotations(annotations: string[]): string {
-	return `%%${annotations.join(', ')}%%`;
+	return `%%${annotations.join(", ")}%%`;
 }
 
 /**
@@ -146,7 +180,7 @@ export function appendAnnotations(
 		// Create new annotation line after paragraph
 		const lineText = editor.getLine(paragraphEndLine);
 		const insertPos = { line: paragraphEndLine, ch: lineText.length };
-		const newLine = '\n' + formatAnnotations(newAnnotations);
+		const newLine = "\n" + formatAnnotations(newAnnotations);
 		editor.replaceRange(newLine, insertPos);
 	}
 }

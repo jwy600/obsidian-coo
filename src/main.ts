@@ -7,7 +7,7 @@ import { chatCompletion } from "./ai-client";
 import { getBlockActionPrompt, buildActionPrompt } from "./prompts";
 import {
 	getSelectedTextWithContext,
-	findParagraphBounds,
+	findParagraphBoundsNear,
 	getParagraphText,
 	findAnnotationLine,
 	parseAnnotations,
@@ -61,13 +61,7 @@ export default class CooPlugin extends Plugin {
 				if (!this.requireApiKey()) return;
 
 				const cursor = editor.getCursor();
-				let bounds = findParagraphBounds(editor, cursor.line);
-
-				// If cursor is on an annotation line, find the paragraph above it
-				if (!bounds && cursor.line > 0) {
-					bounds = findParagraphBounds(editor, cursor.line - 1);
-				}
-
+				const bounds = findParagraphBoundsNear(editor, cursor.line);
 				if (!bounds) {
 					new Notice("Place your cursor in a paragraph.");
 					return;
@@ -158,13 +152,7 @@ export default class CooPlugin extends Plugin {
 
 				// Rewrite: show when paragraph has annotations
 				const cursor = editor.getCursor();
-				let bounds = findParagraphBounds(editor, cursor.line);
-
-				// If cursor is on an annotation line, find the paragraph above it
-				if (!bounds && cursor.line > 0) {
-					bounds = findParagraphBounds(editor, cursor.line - 1);
-				}
-
+				const bounds = findParagraphBoundsNear(editor, cursor.line);
 				if (!bounds) return;
 
 				const annotationLineNum = findAnnotationLine(
