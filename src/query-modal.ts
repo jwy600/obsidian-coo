@@ -1,7 +1,6 @@
 import { App, Modal, Notice } from "obsidian";
 import type { CooSettings } from "./types";
 import { chatCompletion } from "./ai-client";
-import { getDeveloperPrompt } from "./prompts";
 
 function sanitizeFilename(text: string): string {
 	return text
@@ -20,12 +19,14 @@ async function uniqueFilename(app: App, baseName: string): Promise<string> {
 
 export class QueryModal extends Modal {
 	private settings: CooSettings;
+	private developerPrompt: string;
 	private textareaEl: HTMLTextAreaElement;
 	private submitBtn: HTMLButtonElement;
 
-	constructor(app: App, settings: CooSettings) {
+	constructor(app: App, settings: CooSettings, developerPrompt: string) {
 		super(app);
 		this.settings = settings;
+		this.developerPrompt = developerPrompt;
 	}
 
 	onOpen(): void {
@@ -75,9 +76,7 @@ export class QueryModal extends Modal {
 		try {
 			const response = await chatCompletion({
 				settings: this.settings,
-				systemPrompt: getDeveloperPrompt(
-					this.settings.responseLanguage,
-				),
+				systemPrompt: this.developerPrompt,
 				userPrompt: query,
 			});
 

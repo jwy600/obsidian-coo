@@ -1,17 +1,14 @@
 import { App, Editor, Modal, Notice } from "obsidian";
 import type { BlockAction, CooSettings } from "./types";
 import { chatCompletion } from "./ai-client";
-import {
-	getBlockActionPrompt,
-	getDeveloperPrompt,
-	buildActionPrompt,
-} from "./prompts";
+import { getBlockActionPrompt, buildActionPrompt } from "./prompts";
 import { findParagraphBounds, appendAnnotations } from "./editor-ops";
 
 export class CooComposer extends Modal {
 	private settings: CooSettings;
 	private selectedText: string;
 	private editor: Editor;
+	private developerPrompt: string;
 
 	// UI elements
 	private composerBox: HTMLDivElement;
@@ -29,11 +26,13 @@ export class CooComposer extends Modal {
 		selectedText: string,
 		editor: Editor,
 		selectionFrom: { line: number; ch: number },
+		developerPrompt: string,
 	) {
 		super(app);
 		this.settings = settings;
 		this.selectedText = selectedText;
 		this.editor = editor;
+		this.developerPrompt = developerPrompt;
 
 		// Determine paragraph end line for appending annotations
 		const bounds = findParagraphBounds(editor, selectionFrom.line);
@@ -232,9 +231,7 @@ export class CooComposer extends Modal {
 
 			const response = await chatCompletion({
 				settings: this.settings,
-				systemPrompt: getDeveloperPrompt(
-					this.settings.responseLanguage,
-				),
+				systemPrompt: this.developerPrompt,
 				userPrompt,
 			});
 

@@ -6,6 +6,11 @@ import { CooComposer } from "./composer-modal";
 import { chatCompletion } from "./ai-client";
 import { getBlockActionPrompt, buildActionPrompt } from "./prompts";
 import {
+	ensureDefaultPrompts,
+	loadDeveloperPrompt,
+	migratePromptFilename,
+} from "./prompt-loader";
+import {
 	getSelectedTextWithContext,
 	findParagraphBoundsNear,
 	getParagraphText,
@@ -17,9 +22,24 @@ import {
 
 export default class CooPlugin extends Plugin {
 	settings: CooSettings;
+	developerPrompt: string;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
+		await ensureDefaultPrompts(this.app, this.manifest.dir ?? "");
+		const result = await loadDeveloperPrompt(
+			this.app,
+			this.manifest.dir ?? "",
+			this.settings.responseLanguage,
+			this.settings.systemPromptFile,
+		);
+		this.developerPrompt = result.content;
+		if (result.usedFallback) {
+			new Notice(
+				`System prompt file "${this.settings.systemPromptFile}" not found or empty. Using default prompt.`,
+				5000,
+			);
+		}
 
 		// --- Flow A: Ask ---
 		this.addCommand({
@@ -27,7 +47,11 @@ export default class CooPlugin extends Plugin {
 			name: "ask",
 			callback: () => {
 				if (!this.requireApiKey()) return;
-				new QueryModal(this.app, this.settings).open();
+				new QueryModal(
+					this.app,
+					this.settings,
+					this.developerPrompt,
+				).open();
 			},
 		});
 
@@ -50,6 +74,7 @@ export default class CooPlugin extends Plugin {
 					ctx.selectedText,
 					editor,
 					ctx.from,
+					this.developerPrompt,
 				).open();
 			},
 		});
@@ -151,6 +176,7 @@ export default class CooPlugin extends Plugin {
 									ctx.selectedText,
 									editor,
 									ctx.from,
+									this.developerPrompt,
 								).open();
 							});
 					});
@@ -227,11 +253,35 @@ export default class CooPlugin extends Plugin {
 		this.addSettingTab(new CooSettingTab(this.app, this));
 	}
 
+	async reloadDeveloperPrompt(): Promise<void> {
+		const result = await loadDeveloperPrompt(
+			this.app,
+			this.manifest.dir ?? "",
+			this.settings.responseLanguage,
+			this.settings.systemPromptFile,
+		);
+		this.developerPrompt = result.content;
+		if (result.usedFallback) {
+			new Notice(
+				`System prompt file "${this.settings.systemPromptFile}" not found or empty. Using default prompt.`,
+				5000,
+			);
+		}
+	}
+
 	async loadSettings(): Promise<void> {
 		this.settings = {
 			...DEFAULT_SETTINGS,
 			...((await this.loadData()) as Partial<CooSettings> | null),
 		};
+
+		// Migrate old flat-file names (e.g. "developer.en.md") to the
+		// new language-folder scheme (just "developer.md").
+		const migrated = migratePromptFilename(this.settings.systemPromptFile);
+		if (migrated !== this.settings.systemPromptFile) {
+			this.settings = { ...this.settings, systemPromptFile: migrated };
+			await this.saveSettings();
+		}
 	}
 
 	async saveSettings(): Promise<void> {

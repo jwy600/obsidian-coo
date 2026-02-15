@@ -21,4 +21,5 @@ export interface CooSettings {
 	webSearchEnabled: boolean;
 	responseLanguage: ResponseLanguage;
 	translateLanguage: TranslateLanguage;
+	systemPromptFile: string;
 }

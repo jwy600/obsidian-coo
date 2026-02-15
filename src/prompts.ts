@@ -1,6 +1,6 @@
-import type { BlockAction, ResponseLanguage, TranslateLanguage } from './types';
+import type { BlockAction, ResponseLanguage, TranslateLanguage } from "./types";
 
-const DEVELOPER_PROMPT_EN = `You are a knowledgeable assistant that provides deep, thorough explanations.
+export const DEVELOPER_PROMPT_EN_FALLBACK = `You are a knowledgeable assistant that provides deep, thorough explanations.
 
 <response_approach>
 - Start with a clear, direct answer or definition
@@ -31,7 +31,7 @@ const DEVELOPER_PROMPT_EN = `You are a knowledgeable assistant that provides dee
 - Artificial padding for simple topics
 </avoid>`;
 
-const DEVELOPER_PROMPT_ZH = `You are a knowledgeable assistant that provides deep, thorough explanations.
+export const DEVELOPER_PROMPT_ZH_FALLBACK = `You are a knowledgeable assistant that provides deep, thorough explanations.
 
 <response_approach>
 - Always respond in Simplified Chinese (简体中文)
@@ -82,12 +82,8 @@ const BLOCK_ACTION_PROMPT_ZH = `You transform or answer questions about a given 
 - Match the tone of the original text
 </rules>`;
 
-export function getDeveloperPrompt(lang: ResponseLanguage): string {
-	return lang === 'zh' ? DEVELOPER_PROMPT_ZH : DEVELOPER_PROMPT_EN;
-}
-
 export function getBlockActionPrompt(lang: ResponseLanguage): string {
-	return lang === 'zh' ? BLOCK_ACTION_PROMPT_ZH : BLOCK_ACTION_PROMPT_EN;
+	return lang === "zh" ? BLOCK_ACTION_PROMPT_ZH : BLOCK_ACTION_PROMPT_EN;
 }
 
 export function buildActionPrompt(
@@ -99,25 +95,25 @@ export function buildActionPrompt(
 	const trimmedBlock = blockText.trim();
 
 	switch (action) {
-		case 'translate': {
-			const language = translateLanguage ?? 'Chinese';
+		case "translate": {
+			const language = translateLanguage ?? "Chinese";
 			return `Translate into ${language}:\n\n${trimmedBlock}`;
 		}
-		case 'example':
+		case "example":
 			return `Give one concrete example of this:\n\n${trimmedBlock}`;
-		case 'expand':
+		case "expand":
 			return `Expand on this with more detail:\n\n${trimmedBlock}`;
-		case 'eli5':
+		case "eli5":
 			return `Explain this like I'm five:\n\n${trimmedBlock}`;
-		case 'rewrite': {
-			const highlightPrompt = prompt?.trim() ?? '';
+		case "rewrite": {
+			const highlightPrompt = prompt?.trim() ?? "";
 			return `Rewrite this text, incorporating the highlighted phrases naturally. If a phrase is in a different language, INSERT each highlighted phrase in parentheses immediately after the most relevant word/phrase in the text. Prioritize natural integration, but if no coherent or logical placement exists for a phrase, append it at the end of the text rather than forcing an awkward insertion. Phrases to incorporate: ${highlightPrompt}. Text: ${trimmedBlock}`;
 		}
-		case 'ask': {
-			const trimmedPrompt = prompt?.trim() ?? '';
+		case "ask": {
+			const trimmedPrompt = prompt?.trim() ?? "";
 			return `Text: "${trimmedBlock}"\n\nQuestion: ${trimmedPrompt}`;
 		}
 		default:
-			return '';
+			return "";
 	}
 }
