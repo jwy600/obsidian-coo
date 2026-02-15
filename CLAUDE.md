@@ -56,15 +56,15 @@ npm run lint         # eslint (includes obsidian-specific rules)
 
 ```
 src/
-  main.ts            # Plugin lifecycle + 3 commands + context menu (~270 lines)
-  settings.ts        # CooSettings interface, defaults, settings tab (~170 lines)
+  main.ts            # Plugin lifecycle + 3 commands + context menu (~265 lines)
+  settings.ts        # CooSettings defaults, settings tab with 7 dropdowns/toggles (~180 lines)
   types.ts           # Shared types: ModelType, BlockAction, CooSettings (~25 lines)
   prompts.ts         # Block-action system prompts + buildActionPrompt() + developer prompt fallbacks (~120 lines)
-  prompt-loader.ts   # External .md prompt loading: ensure defaults, list files, load/cache (~100 lines)
+  prompt-loader.ts   # External .md prompt loading: ensure defaults, list files, load/migrate (~140 lines)
   ai-client.ts       # OpenAI Responses API: chatCompletion (non-streaming only) (~130 lines)
   query-modal.ts     # Flow A modal: text input → AI → create note (~100 lines)
-  composer-modal.ts  # Flow B modal: ChatGPT-style composer with contenteditable area (~250 lines)
-  editor-ops.ts      # Paragraph detection, %%annotation%% parsing/editing (~140 lines)
+  composer-modal.ts  # Flow B modal: ChatGPT-style composer with contenteditable area (~245 lines)
+  editor-ops.ts      # Paragraph detection, %%annotation%% parsing/editing (~245 lines)
 ```
 
 Output: `main.js` + `manifest.json` + `styles.css` at repo root (loaded by Obsidian).
@@ -73,11 +73,11 @@ Output: `main.js` + `manifest.json` + `styles.css` at repo root (loaded by Obsid
 
 | File | Purpose |
 |------|---------|
-| `src/main.ts` | `CooPlugin` class: `onload` registers 3 commands (`coo-ask`, `coo-discuss`, `coo-rewrite`) + editor context menu |
-| `src/settings.ts` | `CooSettings` interface, `DEFAULT_SETTINGS`, `CooSettingTab` with 7 settings |
+| `src/main.ts` | `CooPlugin` class: `onload` registers 3 commands (`coo-ask`, `coo-discuss`, `coo-rewrite`) + editor context menu. Private helpers `openDiscuss()` and `performRewrite()` shared by command + context menu |
+| `src/settings.ts` | `DEFAULT_SETTINGS`, `CooSettingTab` with 7 settings (async `display()` loads prompt file list) |
 | `src/ai-client.ts` | `chatCompletion()` (non-streaming only) via raw fetch to Responses API |
 | `src/prompts.ts` | Block-action system prompts, `buildActionPrompt()` for all 6 actions, developer prompt fallback constants |
-| `src/prompt-loader.ts` | External `.md` prompt file management: `ensureDefaultPrompts()`, `listPromptFiles()`, `loadDeveloperPrompt()` |
+| `src/prompt-loader.ts` | External `.md` prompt file management: `ensureDefaultPrompts()`, `listPromptFiles()`, `loadDeveloperPrompt()`, `migratePromptFilename()` |
 | `src/query-modal.ts` | Flow A: "Coo: Ask" — question input → creates new note with response |
 | `src/composer-modal.ts` | Flow B: "Coo: Discuss" — ChatGPT-style composer with contenteditable area, quick actions, phrase picking |
 | `src/editor-ops.ts` | Paragraph bounds detection, `%%...%%` annotation CRUD, paragraph replacement |
@@ -120,7 +120,7 @@ Some paragraph text that the user discussed with AI.
 | Model | dropdown | `gpt-5.2` | `gpt-5.2` or `gpt-5-mini` |
 | Reasoning effort | dropdown | `none` | `none` / `low` / `medium` / `high` — sent as `reasoning.effort` |
 | Web search | toggle | `false` | Sends `tools: [{ type: 'web_search' }]` |
-| Response language | dropdown | `en` | `en` / `zh` — selects block-action system prompt variant |
+| Response language | dropdown | `en` | `en` / `zh` — selects block-action system prompt variant and `prompts/{lang}/` folder for developer prompt |
 | Translation language | dropdown | `Chinese` | Target for Translate action |
 | System prompt | dropdown | `developer.md` | File from `prompts/{lang}/` folder in plugin dir; user can add custom `.md` files per language |
 
