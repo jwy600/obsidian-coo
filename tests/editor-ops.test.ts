@@ -5,6 +5,7 @@ import {
 	formatAnnotations,
 	findParagraphBounds,
 	findParagraphBoundsNear,
+	extractMarkdownPrefix,
 	findAnnotationLine,
 	getParagraphText,
 } from "../src/editor-ops";
@@ -130,6 +131,42 @@ describe("findParagraphBounds", () => {
 			endLine: 1,
 		});
 	});
+
+	it("treats unordered list item as individual paragraph", () => {
+		const editor = createMockEditor(["- item 1", "- item 2", "- item 3"]);
+		expect(findParagraphBounds(editor, 1)).toEqual({
+			startLine: 1,
+			endLine: 1,
+		});
+	});
+
+	it("treats ordered list item as individual paragraph", () => {
+		const editor = createMockEditor(["1. first", "2. second", "3. third"]);
+		expect(findParagraphBounds(editor, 0)).toEqual({
+			startLine: 0,
+			endLine: 0,
+		});
+	});
+
+	it("treats indented list item as individual paragraph", () => {
+		const editor = createMockEditor(["- parent", "  - child", "- sibling"]);
+		expect(findParagraphBounds(editor, 1)).toEqual({
+			startLine: 1,
+			endLine: 1,
+		});
+	});
+
+	it("treats * and + list markers as list items", () => {
+		const editor = createMockEditor(["* star item", "+ plus item"]);
+		expect(findParagraphBounds(editor, 0)).toEqual({
+			startLine: 0,
+			endLine: 0,
+		});
+		expect(findParagraphBounds(editor, 1)).toEqual({
+			startLine: 1,
+			endLine: 1,
+		});
+	});
 });
 
 describe("findAnnotationLine", () => {
@@ -202,6 +239,71 @@ describe("findParagraphBoundsNear", () => {
 			"%%detached annotation%%",
 		]);
 		expect(findParagraphBoundsNear(editor, 2)).toBeNull();
+	});
+
+	it("finds list item above annotation line", () => {
+		const editor = createMockEditor([
+			"- item 1",
+			"- item 2",
+			"%%notes%%",
+			"- item 3",
+		]);
+		expect(findParagraphBoundsNear(editor, 2)).toEqual({
+			startLine: 1,
+			endLine: 1,
+		});
+	});
+});
+
+describe("extractMarkdownPrefix", () => {
+	it("extracts unordered list marker '- '", () => {
+		const result = extractMarkdownPrefix("- some item");
+		expect(result).toEqual({ prefix: "- ", content: "some item" });
+	});
+
+	it("extracts '* ' list marker", () => {
+		const result = extractMarkdownPrefix("* star item");
+		expect(result).toEqual({ prefix: "* ", content: "star item" });
+	});
+
+	it("extracts '+ ' list marker", () => {
+		const result = extractMarkdownPrefix("+ plus item");
+		expect(result).toEqual({ prefix: "+ ", content: "plus item" });
+	});
+
+	it("extracts ordered list marker", () => {
+		const result = extractMarkdownPrefix("1. first item");
+		expect(result).toEqual({ prefix: "1. ", content: "first item" });
+	});
+
+	it("extracts indented list marker", () => {
+		const result = extractMarkdownPrefix("  - nested item");
+		expect(result).toEqual({ prefix: "  - ", content: "nested item" });
+	});
+
+	it("extracts heading prefix", () => {
+		const result = extractMarkdownPrefix("## My heading");
+		expect(result).toEqual({ prefix: "## ", content: "My heading" });
+	});
+
+	it("extracts blockquote prefix", () => {
+		const result = extractMarkdownPrefix("> quoted text");
+		expect(result).toEqual({ prefix: "> ", content: "quoted text" });
+	});
+
+	it("returns empty prefix for plain text", () => {
+		const result = extractMarkdownPrefix("Just regular text");
+		expect(result).toEqual({ prefix: "", content: "Just regular text" });
+	});
+
+	it("returns empty prefix for empty string", () => {
+		const result = extractMarkdownPrefix("");
+		expect(result).toEqual({ prefix: "", content: "" });
+	});
+
+	it("does not match mid-line dashes", () => {
+		const result = extractMarkdownPrefix("some - text");
+		expect(result).toEqual({ prefix: "", content: "some - text" });
 	});
 });
 

@@ -9,6 +9,7 @@ import {
 	getSelectedTextWithContext,
 	findParagraphBoundsNear,
 	getParagraphText,
+	extractMarkdownPrefix,
 	findAnnotationLine,
 	parseAnnotations,
 	replaceParagraphAndRemoveAnnotations,
@@ -91,12 +92,17 @@ export default class CooPlugin extends Plugin {
 					return;
 				}
 
+				// Strip markdown prefix (e.g. "- ", "## ") so the AI
+				// rewrites only the content, then re-add it after.
+				const { prefix, content } =
+					extractMarkdownPrefix(paragraphText);
+
 				new Notice("Rewriting...");
 
 				try {
 					const userPrompt = buildActionPrompt(
 						"rewrite",
-						paragraphText,
+						content,
 						annotations.join(", "),
 					);
 
@@ -113,7 +119,7 @@ export default class CooPlugin extends Plugin {
 						bounds.startLine,
 						bounds.endLine,
 						annotationLineNum,
-						rewritten,
+						prefix + rewritten,
 					);
 
 					new Notice("Rewritten.");
@@ -176,13 +182,15 @@ export default class CooPlugin extends Plugin {
 								bounds.startLine,
 								bounds.endLine,
 							);
+							const { prefix, content } =
+								extractMarkdownPrefix(paragraphText);
 
 							new Notice("Rewriting...");
 
 							try {
 								const userPrompt = buildActionPrompt(
 									"rewrite",
-									paragraphText,
+									content,
 									annotations.join(", "),
 								);
 
@@ -199,7 +207,7 @@ export default class CooPlugin extends Plugin {
 									bounds.startLine,
 									bounds.endLine,
 									annotationLineNum,
-									rewritten,
+									prefix + rewritten,
 								);
 
 								new Notice("Rewritten.");

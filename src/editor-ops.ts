@@ -11,6 +11,11 @@ export interface ParagraphBounds {
 	endLine: number;
 }
 
+export interface MarkdownPrefix {
+	prefix: string;
+	content: string;
+}
+
 /**
  * Get the current editor selection with position info.
  * Returns null if nothing is selected.
@@ -44,6 +49,14 @@ function isEmptyLine(line: string): boolean {
 }
 
 /**
+ * Check if a line is a list item (unordered or ordered).
+ * Matches: "- ", "* ", "+ ", "1. ", "  - " (indented), etc.
+ */
+function isListItem(line: string): boolean {
+	return /^\s*(?:[-*+]|\d+\.)\s/.test(line);
+}
+
+/**
  * Find the paragraph bounds around a given line.
  * A paragraph is a contiguous block of non-empty, non-annotation lines.
  */
@@ -56,6 +69,12 @@ export function findParagraphBounds(
 
 	if (isEmptyLine(currentLine) || isAnnotationLine(currentLine)) {
 		return null;
+	}
+
+	// List items are treated as individual paragraphs so that
+	// annotations attach to the specific item, not the entire list.
+	if (isListItem(currentLine)) {
+		return { startLine: lineNum, endLine: lineNum };
 	}
 
 	let startLine = lineNum;
@@ -107,6 +126,23 @@ export function getParagraphText(
 		lines.push(editor.getLine(i));
 	}
 	return lines.join("\n");
+}
+
+/**
+ * Extract a markdown line prefix (list marker, heading, blockquote)
+ * from the text. Returns the prefix and the remaining content.
+ * Used by rewrite to strip the prefix before sending to AI,
+ * then re-add it to the response.
+ */
+export function extractMarkdownPrefix(text: string): MarkdownPrefix {
+	// List items: "- ", "* ", "+ ", "1. ", "  - ", "   1. ", etc.
+	// Headings: "# ", "## ", "### ", etc.
+	// Blockquotes: "> ", ">  ", etc.
+	const match = text.match(/^(\s*(?:[-*+]|\d+\.)\s+|#{1,6}\s+|>\s+)/);
+	if (match && match[1]) {
+		return { prefix: match[1], content: text.slice(match[1].length) };
+	}
+	return { prefix: "", content: text };
 }
 
 /**
