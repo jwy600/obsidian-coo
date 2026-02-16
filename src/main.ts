@@ -4,7 +4,11 @@ import { DEFAULT_SETTINGS, CooSettingTab } from "./settings";
 import { QueryModal } from "./query-modal";
 import { CooComposer } from "./composer-modal";
 import { chatCompletion } from "./ai-client";
-import { getBlockActionPrompt, buildActionPrompt } from "./prompts";
+import {
+	getBlockActionPrompt,
+	buildActionPrompt,
+	getInspirePrompt,
+} from "./prompts";
 import {
 	ensureDefaultPrompts,
 	loadDeveloperPrompt,
@@ -18,6 +22,10 @@ import {
 	findAnnotationLine,
 	parseAnnotations,
 	replaceParagraphAndRemoveAnnotations,
+	extractInstruction,
+	gatherSurroundingContext,
+	formatInspireResponse,
+	replaceParagraphWithInspiration,
 } from "./editor-ops";
 
 export default class CooPlugin extends Plugin {
@@ -106,6 +114,36 @@ export default class CooPlugin extends Plugin {
 			},
 		});
 
+		// --- Flow D: Inspire ---
+		this.addCommand({
+			id: "coo-inspire",
+			name: "inspire",
+			editorCallback: async (editor: Editor) => {
+				if (!this.requireApiKey()) return;
+
+				const cursor = editor.getCursor();
+				const bounds = findParagraphBoundsNear(editor, cursor.line);
+				if (!bounds) {
+					new Notice("Place your cursor in a paragraph.");
+					return;
+				}
+
+				const paragraphText = getParagraphText(
+					editor,
+					bounds.startLine,
+					bounds.endLine,
+				);
+
+				const extracted = extractInstruction(paragraphText);
+				if (!extracted) {
+					new Notice("No {instruction} found in this paragraph.");
+					return;
+				}
+
+				await this.performInspire(editor, bounds, extracted);
+			},
+		});
+
 		// --- Context menu ---
 		this.registerEvent(
 			this.app.workspace.on("editor-menu", (menu, editor) => {
@@ -120,34 +158,56 @@ export default class CooPlugin extends Plugin {
 					});
 				}
 
-				// Rewrite: show when paragraph has annotations
 				const cursor = editor.getCursor();
 				const bounds = findParagraphBoundsNear(editor, cursor.line);
 				if (!bounds) return;
 
+				// Inspire: show when paragraph contains {instruction}
+				const paragraphText = getParagraphText(
+					editor,
+					bounds.startLine,
+					bounds.endLine,
+				);
+				const inspireExtracted = extractInstruction(paragraphText);
+				if (inspireExtracted) {
+					menu.addItem((item) => {
+						item.setTitle("coo inspire")
+							.setIcon("lightbulb")
+							.onClick(async () => {
+								if (!this.requireApiKey()) return;
+								await this.performInspire(
+									editor,
+									bounds,
+									inspireExtracted,
+								);
+							});
+					});
+				}
+
+				// Rewrite: show when paragraph has annotations
 				const annotationLineNum = findAnnotationLine(
 					editor,
 					bounds.endLine,
 				);
-				if (annotationLineNum === null) return;
-
-				const annotationLine = editor.getLine(annotationLineNum);
-				const annotations = parseAnnotations(annotationLine);
-				if (annotations.length === 0) return;
-
-				menu.addItem((item) => {
-					item.setTitle("coo rewrite")
-						.setIcon("pencil")
-						.onClick(async () => {
-							if (!this.requireApiKey()) return;
-							await this.performRewrite(
-								editor,
-								bounds,
-								annotationLineNum,
-								annotations,
-							);
+				if (annotationLineNum !== null) {
+					const annotationLine = editor.getLine(annotationLineNum);
+					const annotations = parseAnnotations(annotationLine);
+					if (annotations.length > 0) {
+						menu.addItem((item) => {
+							item.setTitle("coo rewrite")
+								.setIcon("pencil")
+								.onClick(async () => {
+									if (!this.requireApiKey()) return;
+									await this.performRewrite(
+										editor,
+										bounds,
+										annotationLineNum,
+										annotations,
+									);
+								});
 						});
-				});
+					}
+				}
 			}),
 		);
 
@@ -251,6 +311,64 @@ export default class CooPlugin extends Plugin {
 		} catch (err) {
 			const message =
 				err instanceof Error ? err.message : "Rewrite failed.";
+			new Notice(message, 5000);
+		}
+	}
+
+	private async performInspire(
+		editor: Editor,
+		bounds: { startLine: number; endLine: number },
+		extracted: { cleanedText: string; instruction: string },
+	): Promise<void> {
+		const { prefix, content: contentForPrompt } = extractMarkdownPrefix(
+			extracted.cleanedText,
+		);
+		const isListPrefix =
+			prefix.length > 0 && /^\s*(?:[-*+]|\d+\.)\s/.test(prefix);
+		const indentSize = isListPrefix ? prefix.length : 0;
+
+		new Notice("Inspiring...");
+
+		try {
+			const context = gatherSurroundingContext(
+				editor,
+				bounds.startLine,
+				bounds.endLine,
+			);
+
+			const userPrompt = buildActionPrompt(
+				"inspire",
+				contentForPrompt,
+				extracted.instruction,
+				undefined,
+				context || undefined,
+			);
+
+			const response = await chatCompletion({
+				settings: this.settings,
+				systemPrompt: getInspirePrompt(this.settings.responseLanguage),
+				userPrompt,
+			});
+
+			const bulletLines = formatInspireResponse(response, indentSize);
+
+			if (bulletLines.length === 0) {
+				new Notice("No response generated.");
+				return;
+			}
+
+			replaceParagraphWithInspiration(
+				editor,
+				bounds.startLine,
+				bounds.endLine,
+				extracted.cleanedText,
+				bulletLines,
+			);
+
+			new Notice("Inspired.");
+		} catch (err) {
+			const message =
+				err instanceof Error ? err.message : "Inspire failed.";
 			new Notice(message, 5000);
 		}
 	}

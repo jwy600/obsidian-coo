@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
 	buildActionPrompt,
 	getBlockActionPrompt,
+	getInspirePrompt,
 	DEVELOPER_PROMPT_EN_FALLBACK,
 	DEVELOPER_PROMPT_ZH_FALLBACK,
 } from "../src/prompts";
@@ -32,6 +33,20 @@ describe("getBlockActionPrompt", () => {
 	it('returns Chinese prompt for "zh"', () => {
 		const result = getBlockActionPrompt("zh");
 		expect(result).toContain("简体中文");
+	});
+});
+
+describe("getInspirePrompt", () => {
+	it('returns English prompt for "en"', () => {
+		const result = getInspirePrompt("en");
+		expect(result).toContain("bullet points");
+		expect(result).not.toContain("简体中文");
+	});
+
+	it('returns Chinese prompt for "zh"', () => {
+		const result = getInspirePrompt("zh");
+		expect(result).toContain("简体中文");
+		expect(result).toContain("bullet points");
 	});
 });
 
@@ -110,5 +125,40 @@ describe("buildActionPrompt", () => {
 	it("trims block text", () => {
 		const result = buildActionPrompt("example", "  \n  hello  \n  ");
 		expect(result).toBe("Give one concrete example of this:\n\nhello");
+	});
+
+	it("inspire action with instruction", () => {
+		const result = buildActionPrompt(
+			"inspire",
+			sampleText,
+			"  explain from bayesian perspective  ",
+		);
+		expect(result).toContain('Text: "The quick brown fox"');
+		expect(result).toContain(
+			"Instruction: explain from bayesian perspective",
+		);
+	});
+
+	it("inspire action without instruction uses empty string", () => {
+		const result = buildActionPrompt("inspire", sampleText);
+		expect(result).toContain("Instruction: ");
+	});
+
+	it("inspire action includes document context when provided", () => {
+		const result = buildActionPrompt(
+			"inspire",
+			sampleText,
+			"explain this",
+			undefined,
+			"## My Section\nSome surrounding text",
+		);
+		expect(result).toContain("Document context:");
+		expect(result).toContain("## My Section");
+		expect(result).toContain("Some surrounding text");
+	});
+
+	it("inspire action omits context section when not provided", () => {
+		const result = buildActionPrompt("inspire", sampleText, "explain");
+		expect(result).not.toContain("Document context:");
 	});
 });

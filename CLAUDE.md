@@ -13,7 +13,7 @@ The original Coo web app (Next.js + React + Zustand + Supabase + OpenAI). This p
 | Feature | Reference source | Plugin file |
 |---------|-----------------|-------------|
 | System prompts (EN/ZH developer + block-action) | `prompts/*.md` | `src/prompts.ts` + `src/prompt-loader.ts` |
-| Block actions (translate, example, expand, eli5, ask, rewrite) | `app/api/block-action/route.ts` | `src/prompts.ts` (`buildActionPrompt`) |
+| Block actions (translate, example, expand, eli5, ask, rewrite, inspire) | `app/api/block-action/route.ts` | `src/prompts.ts` (`buildActionPrompt`) |
 | OpenAI Responses API (non-streaming) | `lib/api/openAiClient.ts` | `src/ai-client.ts` (raw `fetch`) |
 | Settings (model, reasoning, web search, language) | `lib/store/settings-slice.ts` | `src/settings.ts` |
 
@@ -33,6 +33,7 @@ The original Coo web app (Next.js + React + Zustand + Supabase + OpenAI). This p
 - **Rewrite from annotations** — cursor-in-paragraph command reads `%%...%%`, calls rewrite action, replaces paragraph and removes annotations
 - **Editor context menu** — right-click "coo rewrite" / "coo discuss" appears contextually
 - **ChatGPT-style composer** — unified contenteditable area with persistent toolbar, pill buttons, shimmer loading, rise-in animation
+- **Inspire from `{instruction}`** — user writes `{instruction}` inline, triggers "coo inspire" to get AI-generated bullet points appended directly into the document, with automatic nesting for list items
 
 ## Tech stack
 
@@ -56,15 +57,15 @@ npm run lint         # eslint (includes obsidian-specific rules)
 
 ```
 src/
-  main.ts            # Plugin lifecycle + 3 commands + context menu (~265 lines)
+  main.ts            # Plugin lifecycle + 4 commands + context menu (~380 lines)
   settings.ts        # CooSettings defaults, settings tab with 7 dropdowns/toggles (~180 lines)
-  types.ts           # Shared types: ModelType, BlockAction, CooSettings (~25 lines)
-  prompts.ts         # Block-action system prompts + buildActionPrompt() + developer prompt fallbacks (~120 lines)
+  types.ts           # Shared types: ModelType, BlockAction, CooSettings (~27 lines)
+  prompts.ts         # Block-action + inspire system prompts + buildActionPrompt() + developer prompt fallbacks (~145 lines)
   prompt-loader.ts   # External .md prompt loading: ensure defaults, list files, load/migrate (~140 lines)
   ai-client.ts       # OpenAI Responses API: chatCompletion (non-streaming only) (~130 lines)
   query-modal.ts     # Flow A modal: text input → AI → create note (~100 lines)
   composer-modal.ts  # Flow B modal: ChatGPT-style composer with contenteditable area (~245 lines)
-  editor-ops.ts      # Paragraph detection, %%annotation%% parsing/editing (~245 lines)
+  editor-ops.ts      # Paragraph detection, %%annotation%% parsing/editing, inspire helpers (~310 lines)
 ```
 
 Output: `main.js` + `manifest.json` + `styles.css` at repo root (loaded by Obsidian).
@@ -73,18 +74,18 @@ Output: `main.js` + `manifest.json` + `styles.css` at repo root (loaded by Obsid
 
 | File | Purpose |
 |------|---------|
-| `src/main.ts` | `CooPlugin` class: `onload` registers 3 commands (`coo-ask`, `coo-discuss`, `coo-rewrite`) + editor context menu. Private helpers `openDiscuss()` and `performRewrite()` shared by command + context menu |
+| `src/main.ts` | `CooPlugin` class: `onload` registers 4 commands (`coo-ask`, `coo-discuss`, `coo-rewrite`, `coo-inspire`) + editor context menu. Private helpers `openDiscuss()`, `performRewrite()`, and `performInspire()` shared by command + context menu |
 | `src/settings.ts` | `DEFAULT_SETTINGS`, `CooSettingTab` with 7 settings (async `display()` loads prompt file list) |
 | `src/ai-client.ts` | `chatCompletion()` (non-streaming only) via raw fetch to Responses API |
-| `src/prompts.ts` | Block-action system prompts, `buildActionPrompt()` for all 6 actions, developer prompt fallback constants |
+| `src/prompts.ts` | Block-action + inspire system prompts, `buildActionPrompt()` for all 7 actions, `getInspirePrompt()`, developer prompt fallback constants |
 | `src/prompt-loader.ts` | External `.md` prompt file management: `ensureDefaultPrompts()`, `listPromptFiles()`, `loadDeveloperPrompt()`, `migratePromptFilename()` |
 | `src/query-modal.ts` | Flow A: "Coo: Ask" — question input → creates new note with response |
 | `src/composer-modal.ts` | Flow B: "Coo: Discuss" — ChatGPT-style composer with contenteditable area, quick actions, phrase picking |
-| `src/editor-ops.ts` | Paragraph bounds detection, `%%...%%` annotation CRUD, paragraph replacement |
+| `src/editor-ops.ts` | Paragraph bounds detection, `%%...%%` annotation CRUD, paragraph replacement, `extractInstruction()` / `formatInspireResponse()` / `replaceParagraphWithInspiration()` for inspire |
 | `manifest.json` | Plugin metadata (`obsidian-coo`) |
 | `styles.css` | Composer box, pill buttons, animations (rise-in, shimmer), `.coo-picked` highlight |
 
-## Three user flows
+## Four user flows
 
 ### Flow A — "Coo: Ask" (`coo-ask`)
 Command palette (works from anywhere) → modal with textarea → Submit → AI generates structured response → new `.md` note created and opened. Filename derived from the query.
@@ -98,6 +99,9 @@ Select text in editor → command palette → ChatGPT-style composer modal with:
 
 ### Flow C — "Coo: Rewrite" (`coo-rewrite`)
 Cursor in a paragraph that has a `%%...%%` annotation line below it → command palette (or right-click context menu) → AI rewrites the paragraph incorporating the annotations → paragraph replaced, annotation line removed. Ctrl+Z undoes.
+
+### Flow D — "Coo: Inspire" (`coo-inspire`)
+Cursor in a paragraph that contains a `{instruction}` → command palette (or right-click context menu) → AI generates bullet points based on the instruction and paragraph context → bullet points appended after the paragraph, `{instruction}` removed from text. If the paragraph is a list item, bullets are nested (indented) under it. Ctrl+Z undoes. Uses a dedicated inspire system prompt that outputs 2-5 concise bullet points. Note: instructions cannot contain nested braces (e.g., `{explain {concept}}` won't work); use parentheses instead.
 
 ## Annotation format
 

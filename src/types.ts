@@ -12,7 +12,8 @@ export type BlockAction =
 	| "expand"
 	| "eli5"
 	| "ask"
-	| "rewrite";
+	| "rewrite"
+	| "inspire";
 
 export interface CooSettings {
 	apiKey: string;

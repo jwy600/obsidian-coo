@@ -8,6 +8,10 @@ import {
 	extractMarkdownPrefix,
 	findAnnotationLine,
 	getParagraphText,
+	extractInstruction,
+	gatherSurroundingContext,
+	formatInspireResponse,
+	replaceParagraphWithInspiration,
 } from "../src/editor-ops";
 
 describe("parseAnnotations", () => {
@@ -316,5 +320,214 @@ describe("getParagraphText", () => {
 	it("returns multiple lines joined", () => {
 		const editor = createMockEditor(["Line 1", "Line 2", "Line 3"]);
 		expect(getParagraphText(editor, 0, 2)).toBe("Line 1\nLine 2\nLine 3");
+	});
+});
+
+describe("gatherSurroundingContext", () => {
+	it("includes heading and lines before paragraph", () => {
+		const editor = createMockEditor([
+			"## My Section",
+			"Some intro text.",
+			"Target paragraph",
+			"After text",
+		]);
+		const result = gatherSurroundingContext(editor, 2, 2);
+		expect(result).toContain("## My Section");
+		expect(result).toContain("Some intro text.");
+		expect(result).toContain("After text");
+		expect(result).not.toContain("Target paragraph");
+	});
+
+	it("returns empty string when paragraph is alone", () => {
+		const editor = createMockEditor(["Only line"]);
+		const result = gatherSurroundingContext(editor, 0, 0);
+		expect(result).toBe("");
+	});
+
+	it("includes heading even when far above (beyond 10-line window)", () => {
+		const lines = ["## Far Heading"];
+		for (let i = 0; i < 15; i++) lines.push(`Line ${i}`);
+		lines.push("Target paragraph");
+		const editor = createMockEditor(lines);
+		const result = gatherSurroundingContext(
+			editor,
+			lines.length - 1,
+			lines.length - 1,
+		);
+		expect(result).toContain("## Far Heading");
+	});
+
+	it("includes lines after paragraph up to 5 lines", () => {
+		const lines = [
+			"Target paragraph",
+			"After 1",
+			"After 2",
+			"After 3",
+			"After 4",
+			"After 5",
+			"After 6",
+			"After 7",
+		];
+		const editor = createMockEditor(lines);
+		const result = gatherSurroundingContext(editor, 0, 0);
+		expect(result).toContain("After 5");
+		expect(result).not.toContain("After 6");
+	});
+
+	it("does not duplicate heading when within 10-line window", () => {
+		const editor = createMockEditor([
+			"## Heading",
+			"Before text",
+			"Target paragraph",
+		]);
+		const result = gatherSurroundingContext(editor, 2, 2);
+		const headingCount = (result.match(/## Heading/g) ?? []).length;
+		expect(headingCount).toBe(1);
+	});
+});
+
+describe("extractInstruction", () => {
+	it("extracts instruction from end of text", () => {
+		const result = extractInstruction("Some text {explain this}");
+		expect(result).toEqual({
+			cleanedText: "Some text",
+			instruction: "explain this",
+		});
+	});
+
+	it("extracts last instruction when multiple present", () => {
+		const result = extractInstruction("A {first} B {second}");
+		expect(result).toEqual({
+			cleanedText: "A {first} B",
+			instruction: "second",
+		});
+	});
+
+	it("returns null when no instruction present", () => {
+		expect(extractInstruction("No braces here")).toBeNull();
+	});
+
+	it("returns null for empty braces", () => {
+		expect(extractInstruction("Text {}")).toBeNull();
+	});
+
+	it("returns null for whitespace-only braces", () => {
+		expect(extractInstruction("Text {   }")).toBeNull();
+	});
+
+	it("preserves list item prefix", () => {
+		const result = extractInstruction("* Item text {do something}");
+		expect(result).toEqual({
+			cleanedText: "* Item text",
+			instruction: "do something",
+		});
+	});
+
+	it("preserves indented list item prefix", () => {
+		const result = extractInstruction("  - Nested item {explain}");
+		expect(result).toEqual({
+			cleanedText: "  - Nested item",
+			instruction: "explain",
+		});
+	});
+
+	it("preserves ordered list prefix", () => {
+		const result = extractInstruction("1. First item {expand}");
+		expect(result).toEqual({
+			cleanedText: "1. First item",
+			instruction: "expand",
+		});
+	});
+
+	it("trims instruction whitespace", () => {
+		const result = extractInstruction("Text {  spaces inside  }");
+		expect(result).toEqual({
+			cleanedText: "Text",
+			instruction: "spaces inside",
+		});
+	});
+
+	it("trims trailing whitespace from cleaned text", () => {
+		const result = extractInstruction("Word   {instruction}   ");
+		expect(result).toEqual({
+			cleanedText: "Word",
+			instruction: "instruction",
+		});
+	});
+});
+
+describe("formatInspireResponse", () => {
+	it("formats bullet lines with zero indent", () => {
+		const result = formatInspireResponse("- Point one\n- Point two", 0);
+		expect(result).toEqual(["- Point one", "- Point two"]);
+	});
+
+	it("adds indentation to bullet lines", () => {
+		const result = formatInspireResponse("- Point one\n- Point two", 2);
+		expect(result).toEqual(["  - Point one", "  - Point two"]);
+	});
+
+	it("adds '- ' prefix to lines missing it", () => {
+		const result = formatInspireResponse("No marker\n- With marker", 0);
+		expect(result).toEqual(["- No marker", "- With marker"]);
+	});
+
+	it("filters empty lines", () => {
+		const result = formatInspireResponse("- One\n\n- Two\n\n", 0);
+		expect(result).toEqual(["- One", "- Two"]);
+	});
+
+	it("trims whitespace from each line", () => {
+		const result = formatInspireResponse("  - Spaced  \n  - Also  ", 0);
+		expect(result).toEqual(["- Spaced", "- Also"]);
+	});
+
+	it("returns empty array for empty response", () => {
+		expect(formatInspireResponse("", 0)).toEqual([]);
+	});
+
+	it("uses correct indent for ordered list prefix length", () => {
+		const result = formatInspireResponse("- Bullet", 3);
+		expect(result).toEqual(["   - Bullet"]);
+	});
+});
+
+describe("replaceParagraphWithInspiration", () => {
+	it("replaces paragraph and appends bullet lines", () => {
+		const lines = ["Original text", "Next line"];
+		const editor = createMockEditor(lines);
+		const replaceRangeSpy = vi.fn();
+		(editor as unknown as Record<string, unknown>).replaceRange =
+			replaceRangeSpy;
+
+		replaceParagraphWithInspiration(editor, 0, 0, "Cleaned text", [
+			"- Bullet one",
+			"- Bullet two",
+		]);
+
+		expect(replaceRangeSpy).toHaveBeenCalledOnce();
+		expect(replaceRangeSpy).toHaveBeenCalledWith(
+			"Cleaned text\n- Bullet one\n- Bullet two",
+			{ line: 0, ch: 0 },
+			{ line: 0, ch: "Original text".length },
+		);
+	});
+
+	it("handles multi-line paragraph replacement", () => {
+		const lines = ["Line one", "Line two", "Next para"];
+		const editor = createMockEditor(lines);
+		const replaceRangeSpy = vi.fn();
+		(editor as unknown as Record<string, unknown>).replaceRange =
+			replaceRangeSpy;
+
+		replaceParagraphWithInspiration(editor, 0, 1, "New text", [
+			"  - Nested bullet",
+		]);
+
+		expect(replaceRangeSpy).toHaveBeenCalledWith(
+			"New text\n  - Nested bullet",
+			{ line: 0, ch: 0 },
+			{ line: 1, ch: "Line two".length },
+		);
 	});
 });

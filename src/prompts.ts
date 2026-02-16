@@ -86,11 +86,37 @@ export function getBlockActionPrompt(lang: ResponseLanguage): string {
 	return lang === "zh" ? BLOCK_ACTION_PROMPT_ZH : BLOCK_ACTION_PROMPT_EN;
 }
 
+const INSPIRE_PROMPT_EN = `You expand on an idea by providing related insights as bullet points.
+
+<rules>
+- Output 2-5 bullet points, each starting with "- "
+- Each bullet should be 1-2 sentences: a concise, standalone insight
+- No preamble, no headers, no numbered lists, no closing remarks
+- Start directly with the first bullet
+- Each bullet should add a distinct angle, not repeat the same idea
+</rules>`;
+
+const INSPIRE_PROMPT_ZH = `You expand on an idea by providing related insights as bullet points.
+
+<rules>
+- Always respond in Simplified Chinese (简体中文)
+- Output 2-5 bullet points, each starting with "- "
+- Each bullet should be 1-2 sentences: a concise, standalone insight
+- No preamble, no headers, no numbered lists, no closing remarks
+- Start directly with the first bullet
+- Each bullet should add a distinct angle, not repeat the same idea
+</rules>`;
+
+export function getInspirePrompt(lang: ResponseLanguage): string {
+	return lang === "zh" ? INSPIRE_PROMPT_ZH : INSPIRE_PROMPT_EN;
+}
+
 export function buildActionPrompt(
 	action: BlockAction,
 	blockText: string,
 	prompt?: string,
 	translateLanguage?: TranslateLanguage,
+	context?: string,
 ): string {
 	const trimmedBlock = blockText.trim();
 
@@ -112,6 +138,15 @@ export function buildActionPrompt(
 		case "ask": {
 			const trimmedPrompt = prompt?.trim() ?? "";
 			return `Text: "${trimmedBlock}"\n\nQuestion: ${trimmedPrompt}`;
+		}
+		case "inspire": {
+			const instruction = prompt?.trim() ?? "";
+			let result = `Text: "${trimmedBlock}"`;
+			if (context) {
+				result += `\n\nDocument context:\n${context}`;
+			}
+			result += `\n\nInstruction: ${instruction}`;
+			return result;
 		}
 		default:
 			return "";

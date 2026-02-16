@@ -222,6 +222,124 @@ export function appendAnnotations(
 }
 
 /**
+ * Gather surrounding document context for a paragraph.
+ * Returns the nearest heading above + up to 10 lines before
+ * and 5 lines after the paragraph (excluding the paragraph itself).
+ */
+export function gatherSurroundingContext(
+	editor: Editor,
+	startLine: number,
+	endLine: number,
+): string {
+	const totalLines = editor.lineCount();
+	const parts: string[] = [];
+
+	// Find nearest heading above
+	let headingLine = -1;
+	for (let i = startLine - 1; i >= 0; i--) {
+		if (/^#{1,6}\s/.test(editor.getLine(i))) {
+			headingLine = i;
+			break;
+		}
+	}
+
+	// If heading is beyond the 10-line window, include it separately
+	const beforeStart = Math.max(0, startLine - 10);
+	if (headingLine >= 0 && headingLine < beforeStart) {
+		parts.push(editor.getLine(headingLine));
+	}
+
+	// Lines before paragraph (up to 10 lines; includes heading if nearby)
+	const beforeLines: string[] = [];
+	for (let i = beforeStart; i < startLine; i++) {
+		beforeLines.push(editor.getLine(i));
+	}
+	if (beforeLines.length > 0) {
+		parts.push(beforeLines.join("\n"));
+	}
+
+	// Lines after paragraph (up to 5 lines)
+	const afterEnd = Math.min(totalLines - 1, endLine + 5);
+	const afterLines: string[] = [];
+	for (let i = endLine + 1; i <= afterEnd; i++) {
+		afterLines.push(editor.getLine(i));
+	}
+	if (afterLines.length > 0) {
+		parts.push(afterLines.join("\n"));
+	}
+
+	return parts.join("\n\n").trim();
+}
+
+/**
+ * Extract the last {instruction} from paragraph text.
+ * Returns the instruction content and cleaned text (with {instruction} removed),
+ * or null if no instruction found.
+ */
+export function extractInstruction(
+	text: string,
+): { cleanedText: string; instruction: string } | null {
+	const regex = /\{([^}]+)\}/g;
+	let lastMatch: RegExpExecArray | null = null;
+	let match: RegExpExecArray | null;
+
+	while ((match = regex.exec(text)) !== null) {
+		lastMatch = match;
+	}
+
+	if (!lastMatch || !lastMatch[1]) return null;
+
+	const instruction = lastMatch[1].trim();
+	if (!instruction) return null;
+
+	const before = text.slice(0, lastMatch.index).replace(/\s+$/, "");
+	const after = text.slice(lastMatch.index + lastMatch[0].length);
+	const cleanedText = (before + after).trimEnd();
+
+	return { cleanedText, instruction };
+}
+
+/**
+ * Format AI response text into indented bullet lines.
+ * Ensures each line starts with "- " and applies indentation
+ * for nesting under list items.
+ */
+export function formatInspireResponse(
+	responseText: string,
+	indentSize: number,
+): string[] {
+	const indent = " ".repeat(indentSize);
+	return responseText
+		.split("\n")
+		.map((line) => line.trim())
+		.filter((line) => line.length > 0)
+		.map((line) => {
+			const bulletLine = line.startsWith("- ") ? line : `- ${line}`;
+			return indent + bulletLine;
+		});
+}
+
+/**
+ * Replace paragraph text and append bullet lines.
+ * Single atomic replaceRange() call — one Ctrl+Z undoes everything.
+ * Used by Flow D (inspire).
+ */
+export function replaceParagraphWithInspiration(
+	editor: Editor,
+	startLine: number,
+	endLine: number,
+	newParagraphText: string,
+	bulletLines: string[],
+): void {
+	const lastLineText = editor.getLine(endLine);
+	const from = { line: startLine, ch: 0 };
+	const to = { line: endLine, ch: lastLineText.length };
+
+	const replacement = newParagraphText + "\n" + bulletLines.join("\n");
+	editor.replaceRange(replacement, from, to);
+}
+
+/**
  * Replace paragraph text and remove the annotation line.
  * Used by Flow C (rewrite).
  */
