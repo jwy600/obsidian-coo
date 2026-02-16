@@ -52,7 +52,7 @@ function isEmptyLine(line: string): boolean {
  * Check if a line is a list item (unordered or ordered).
  * Matches: "- ", "* ", "+ ", "1. ", "  - " (indented), etc.
  */
-function isListItem(line: string): boolean {
+export function isListItem(line: string): boolean {
 	return /^\s*(?:[-*+]|\d+\.)\s/.test(line);
 }
 

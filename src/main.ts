@@ -26,6 +26,7 @@ import {
 	gatherSurroundingContext,
 	formatInspireResponse,
 	replaceParagraphWithInspiration,
+	isListItem,
 } from "./editor-ops";
 
 export default class CooPlugin extends Plugin {
@@ -323,9 +324,9 @@ export default class CooPlugin extends Plugin {
 		const { prefix, content: contentForPrompt } = extractMarkdownPrefix(
 			extracted.cleanedText,
 		);
-		const isListPrefix =
-			prefix.length > 0 && /^\s*(?:[-*+]|\d+\.)\s/.test(prefix);
-		const indentSize = isListPrefix ? prefix.length : 0;
+		const indentSize = isListItem(extracted.cleanedText)
+			? prefix.length
+			: 0;
 
 		new Notice("Inspiring...");
 
