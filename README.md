@@ -66,15 +66,12 @@ Reload Obsidian (Cmd+R or Ctrl+R) → Settings → Community Plugins → enable 
 ### Requirements
 
 - Obsidian 1.12.1
-
 - An OpenAI API key
 
 ## Setup
 
 1. Enable the plugin in **Settings → Community Plugins**
-
 2. Go to **Settings → coo** and enter your OpenAI API key
-
 3. Configure your preferred model, language, and other options
 
 ## Settings
