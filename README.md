@@ -1,6 +1,6 @@
 # coo for Obsidian
 
-coo makes AI contextual in Obsidian. Instead of treating LLMs as a separate place you “go to” (a chat window), coo works inside the exact paragraph you’re reading or writing. Built on Obsidian’s strengths as a powerful editor and personal knowledge system, coo reimagines how people use LLMs for **research and study**—so the interaction happens where understanding is actually formed.
+coo makes AI contextual in Obsidian. Instead of treating LLMs as a separate place you “go to” (a chat window), coo works inside the exact paragraph you’re reading or writing. Built on Obsidian’s strengths as a powerful editor and personal knowledge system, coo reimagines how people use LLMs for research and study—so the interaction **happens where understanding is actually formed**.
 
 ## Features
 
