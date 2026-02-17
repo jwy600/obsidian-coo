@@ -1,6 +1,6 @@
-# Coo for Obsidian
+# coo for Obsidian
 
-Coo makes AI contextual in Obsidian. Instead of treating LLMs as a separate place you “go to” (a chat window), coo works inside the exact paragraph you’re reading or writing. Built on Obsidian’s strengths as a powerful editor and personal knowledge system, coo reimagines how people use LLMs for **research and study**—so the interaction happens where understanding is actually formed.
+coo makes AI contextual in Obsidian. Instead of treating LLMs as a separate place you “go to” (a chat window), coo works inside the exact paragraph you’re reading or writing. Built on Obsidian’s strengths as a powerful editor and personal knowledge system, coo reimagines how people use LLMs for **research and study**—so the interaction happens where understanding is actually formed.
 
 ## Features
 
@@ -28,13 +28,13 @@ Each phrase is instantly saved as an invisible `%%annotation%%` comment below th
 
 ### Rewrite
 
-Place your cursor in a paragraph that has annotations below it and run **Coo: Rewrite** from either command palette or contextual menu (right click). The AI rewrites the paragraph incorporating your picked phrases — translation of a key term, a concrete example, a simpler explanation — then replaces the original text and removes the annotations. Fully undoable with Ctrl/Cmd+Z.
+Place your cursor in a paragraph that has annotations below it and run **coo: Rewrite** from either command palette or contextual menu (right click). The AI rewrites the paragraph incorporating your picked phrases — translation of a key term, a concrete example, a simpler explanation — then replaces the original text and removes the annotations. Fully undoable with Ctrl/Cmd+Z.
 
 ![](https://github.com/jwy600/obsidian-coo/blob/d53575c11fe56e302f3c5348a8028cf9e651bb26/asset/rewrite.png)
 
 ### Inspire
 
-Write an `{instruction}` anywhere in a paragraph — for example, `{give 3 examples}` — and run **Coo: Inspire**. The AI generates 2–5 concise bullet points based on your instruction and appends them directly after the paragraph. If the paragraph is a list item, bullets are automatically nested. The `{instruction}` is removed from the text after expansion.
+Write an `{instruction}` anywhere in a paragraph — for example, `{give 3 examples}` — and run **coo: Inspire**. The AI generates 2–5 concise bullet points based on your instruction and appends them directly after the paragraph. If the paragraph is a list item, bullets are automatically nested. The `{instruction}` is removed from the text after expansion.
 
 ## Installation
 
