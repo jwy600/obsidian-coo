@@ -38,6 +38,14 @@ Write an `{instruction}` anywhere in a paragraph — for example, `{give 3 examp
 
 ## Installation
 
+### From release
+
+1. Go to the [latest release](https://github.com/jwy600/obsidian-coo/releases/latest)
+2. Download `main.js`, `manifest.json`, and `styles.css`
+3. Create a folder at `<Your Vault>/.obsidian/plugins/obsidian-coo/`
+4. Move the three downloaded files into that folder
+5. Reload Obsidian (Cmd+R or Ctrl+R) → Settings → Community Plugins → enable **coo**
+
 ### From source
 
 ```bash
