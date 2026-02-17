@@ -75,6 +75,15 @@ export class CooComposer extends Modal {
 			}
 		});
 
+		// Remove leftover highlight spans when content is cleared.
+		// Without this, Ctrl+A → Backspace leaves empty <span class="coo-picked">
+		// nodes in the DOM, causing newly typed text to inherit highlight styles.
+		this.contentArea.addEventListener("input", () => {
+			if (!this.contentArea.textContent?.trim()) {
+				this.contentArea.innerHTML = "";
+			}
+		});
+
 		// Phrase picking: drag-select text in the response area to add annotations
 		this.contentArea.addEventListener("mouseup", () => {
 			const selection = window.getSelection();
