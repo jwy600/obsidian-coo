@@ -1,3 +1,5 @@
+# Coo for Obsidian
+
 Coo makes AI contextual in Obsidian. Instead of treating LLMs as a separate place you “go to” (a chat window), Coo works inside the exact paragraph you’re reading or writing. Built on Obsidian’s strengths as a powerful editor and personal knowledge system, Coo reimagines how people use LLMs for **research and study**—so the interaction happens where understanding is actually formed.
 
 ![Books are scattered around Shuji Terayama](https://blog.yitianshijie.net/wp-content/uploads/2017/07/fullsizeoutput_33bf.jpeg?w=550&h=862)
@@ -72,4 +74,5 @@ Reload Obsidian (Cmd+R or Ctrl+R) → Settings → Community Plugins → enable 
 | Response language    | English, Chinese                | English        | Language for AI responses and system prompts                         |
 | Translation language | Chinese                         | Chinese        | Target language for the Translate action                             |
 | System prompt        | `developer.md`, `atomic.md`     | `developer.md` | Custom `.md` prompt file from `prompts/{lang}/` in the plugin folder |
+
 
