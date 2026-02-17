@@ -125,19 +125,31 @@ export function buildActionPrompt(
 			const language = translateLanguage ?? "Chinese";
 			return `Translate into ${language}:\n\n${trimmedBlock}`;
 		}
-		case "example":
-			return `Give one concrete example of this:\n\n${trimmedBlock}`;
-		case "expand":
-			return `Expand on this with more detail:\n\n${trimmedBlock}`;
-		case "eli5":
-			return `Explain this like I'm five:\n\n${trimmedBlock}`;
+		case "example": {
+			let result = `Give one concrete example of this:\n\n${trimmedBlock}`;
+			if (context) result += `\n\nDocument context:\n${context}`;
+			return result;
+		}
+		case "expand": {
+			let result = `Expand on this with more detail:\n\n${trimmedBlock}`;
+			if (context) result += `\n\nDocument context:\n${context}`;
+			return result;
+		}
+		case "eli5": {
+			let result = `Explain this like I'm five:\n\n${trimmedBlock}`;
+			if (context) result += `\n\nDocument context:\n${context}`;
+			return result;
+		}
 		case "rewrite": {
 			const highlightPrompt = prompt?.trim() ?? "";
 			return `Rewrite this text, incorporating the highlighted phrases naturally. If a phrase is in a different language, INSERT each highlighted phrase in parentheses immediately after the most relevant word/phrase in the text. Prioritize natural integration, but if no coherent or logical placement exists for a phrase, append it at the end of the text rather than forcing an awkward insertion. Phrases to incorporate: ${highlightPrompt}. Text: ${trimmedBlock}`;
 		}
 		case "ask": {
 			const trimmedPrompt = prompt?.trim() ?? "";
-			return `Text: "${trimmedBlock}"\n\nQuestion: ${trimmedPrompt}`;
+			let result = `Text: "${trimmedBlock}"`;
+			if (context) result += `\n\nDocument context:\n${context}`;
+			result += `\n\nQuestion: ${trimmedPrompt}`;
+			return result;
 		}
 		case "inspire": {
 			const instruction = prompt?.trim() ?? "";

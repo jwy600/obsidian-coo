@@ -2,14 +2,16 @@ import { App, Editor, Modal, Notice } from "obsidian";
 import type { BlockAction, CooSettings } from "./types";
 import { chatCompletion } from "./ai-client";
 import { getBlockActionPrompt, buildActionPrompt } from "./prompts";
-import { findParagraphBounds, appendAnnotations } from "./editor-ops";
+import {
+	findParagraphBounds,
+	appendAnnotations,
+	gatherSurroundingContext,
+} from "./editor-ops";
 
 export class CooComposer extends Modal {
 	private settings: CooSettings;
 	private selectedText: string;
 	private editor: Editor;
-	private developerPrompt: string;
-
 	// UI elements
 	private composerBox: HTMLDivElement;
 	private contentArea: HTMLDivElement;
@@ -18,6 +20,7 @@ export class CooComposer extends Modal {
 
 	// State
 	private paragraphEndLine: number;
+	private surroundingContext: string;
 
 	constructor(
 		app: App,
@@ -25,17 +28,18 @@ export class CooComposer extends Modal {
 		selectedText: string,
 		editor: Editor,
 		selectionFrom: { line: number; ch: number },
-		developerPrompt: string,
 	) {
 		super(app);
 		this.settings = settings;
 		this.selectedText = selectedText;
 		this.editor = editor;
-		this.developerPrompt = developerPrompt;
 
-		// Determine paragraph end line for appending annotations
+		// Determine paragraph bounds for appending annotations and gathering context
 		const bounds = findParagraphBounds(editor, selectionFrom.line);
 		this.paragraphEndLine = bounds ? bounds.endLine : selectionFrom.line;
+		this.surroundingContext = bounds
+			? gatherSurroundingContext(editor, bounds.startLine, bounds.endLine)
+			: "";
 	}
 
 	onOpen(): void {
@@ -184,6 +188,7 @@ export class CooComposer extends Modal {
 				this.selectedText,
 				undefined,
 				this.settings.translateLanguage,
+				this.surroundingContext || undefined,
 			);
 
 			const response = await chatCompletion({
@@ -221,11 +226,15 @@ export class CooComposer extends Modal {
 				"ask",
 				this.selectedText,
 				question,
+				undefined,
+				this.surroundingContext || undefined,
 			);
 
 			const response = await chatCompletion({
 				settings: this.settings,
-				systemPrompt: this.developerPrompt,
+				systemPrompt: getBlockActionPrompt(
+					this.settings.responseLanguage,
+				),
 				userPrompt,
 			});
 

@@ -266,7 +266,6 @@ export default class CooPlugin extends Plugin {
 			ctx.selectedText,
 			editor,
 			ctx.from,
-			this.developerPrompt,
 		).open();
 	}
 
