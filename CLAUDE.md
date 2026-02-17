@@ -57,14 +57,14 @@ npm run lint         # eslint (includes obsidian-specific rules)
 
 ```
 src/
-  main.ts            # Plugin lifecycle + 4 commands + context menu (~380 lines)
+  main.ts            # Plugin lifecycle + 4 commands + context menu (~384 lines)
   settings.ts        # CooSettings defaults, settings tab with 7 dropdowns/toggles (~180 lines)
   types.ts           # Shared types: ModelType, BlockAction, CooSettings (~27 lines)
-  prompts.ts         # Block-action + inspire system prompts + buildActionPrompt() + developer prompt fallbacks (~145 lines)
+  prompts.ts         # Block-action + inspire system prompts + buildActionPrompt() + developer prompt fallbacks (~166 lines)
   prompt-loader.ts   # External .md prompt loading: ensure defaults, list files, load/migrate (~140 lines)
   ai-client.ts       # OpenAI Responses API: chatCompletion (non-streaming only) (~130 lines)
   query-modal.ts     # Flow A modal: text input → AI → create note (~100 lines)
-  composer-modal.ts  # Flow B modal: ChatGPT-style composer with contenteditable area (~245 lines)
+  composer-modal.ts  # Flow B modal: ChatGPT-style composer with contenteditable area (~252 lines)
   editor-ops.ts      # Paragraph detection, %%annotation%% parsing/editing, inspire helpers (~310 lines)
 ```
 
@@ -80,7 +80,7 @@ Output: `main.js` + `manifest.json` + `styles.css` at repo root (loaded by Obsid
 | `src/prompts.ts` | Block-action + inspire system prompts, `buildActionPrompt()` for all 7 actions, `getInspirePrompt()`, developer prompt fallback constants |
 | `src/prompt-loader.ts` | External `.md` prompt file management: `ensureDefaultPrompts()`, `listPromptFiles()`, `loadDeveloperPrompt()`, `migratePromptFilename()` |
 | `src/query-modal.ts` | Flow A: "Coo: Ask" — question input → creates new note with response |
-| `src/composer-modal.ts` | Flow B: "Coo: Discuss" — ChatGPT-style composer with contenteditable area, quick actions, phrase picking |
+| `src/composer-modal.ts` | Flow B: "Coo: Discuss" — ChatGPT-style composer with contenteditable area, quick actions, phrase picking. All actions include surrounding document context |
 | `src/editor-ops.ts` | Paragraph bounds detection, `%%...%%` annotation CRUD, paragraph replacement, `extractInstruction()` / `formatInspireResponse()` / `replaceParagraphWithInspiration()` for inspire |
 | `manifest.json` | Plugin metadata (`obsidian-coo`) |
 | `styles.css` | Composer box, pill buttons, animations (rise-in, shimmer), `.coo-picked` highlight |
@@ -94,7 +94,7 @@ Command palette (works from anywhere) → modal with textarea → Submit → AI 
 Select text in editor → command palette → ChatGPT-style composer modal with:
 - **Single contenteditable area** — serves as both input and response display. User types a question or clicks a quick action; AI response fills the same area. User can edit the response text directly.
 - **Toolbar row** (always visible) — quick action pill buttons (Translate / Example / Expand / ELI5) on the left, Ask button on the right.
-- **Quick actions**: non-streaming, block-action prompt. **Ask**: non-streaming, developer prompt.
+- **Quick actions**: non-streaming, block-action prompt. **Ask**: non-streaming, block-action prompt. Both include surrounding document context (nearest heading + up to 10 lines before and 5 lines after) via `gatherSurroundingContext()`.
 - After response, **phrase picking** activates: drag-select text → highlighted with `.coo-picked` → immediately appended as `%%phrase1, phrase2%%` annotation below the source paragraph. Each pick is a separate editor operation (undoable). Duplicates are skipped.
 
 ### Flow C — "Coo: Rewrite" (`coo-rewrite`)
