@@ -85,3 +85,7 @@ Reload Obsidian (Cmd+R or Ctrl+R) → Settings → Community Plugins → enable 
 | Response language    | English, Chinese                | English        | Language for AI responses and system prompts                         |
 | Translation language | Chinese                         | Chinese        | Target language for the Translate action                             |
 | System prompt        | `developer.md`, `atomic.md`     | `developer.md` | Custom `.md` prompt file from `prompts/{lang}/` in the plugin folder |
+
+## Web app deployment
+
+The design also has a web app deployment. Visit [here](https://github.com/jwy600/coo-app-next) to learn more.
