@@ -1,15 +1,13 @@
 import { Editor, Notice, Plugin } from "obsidian";
 import type { CooSettings } from "./types";
 import { DEFAULT_SETTINGS, CooSettingTab } from "./settings";
+import { detectObsidianLocale } from "./settings-utils";
 import { QueryModal } from "./query-modal";
 import { CooComposer } from "./composer-modal";
 import { chatCompletion } from "./ai-client";
+import { getBlockActionSystemPrompt, buildActionPrompt } from "./prompts";
 import {
-	getBlockActionPrompt,
-	buildActionPrompt,
-	getInspirePrompt,
-} from "./prompts";
-import {
+	migratePromptFolders,
 	ensureDefaultPrompts,
 	loadDeveloperPrompt,
 	migratePromptFilename,
@@ -35,6 +33,7 @@ export default class CooPlugin extends Plugin {
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
+		await migratePromptFolders(this.app, this.manifest.dir ?? "");
 		await ensureDefaultPrompts(this.app, this.manifest.dir ?? "");
 		const result = await loadDeveloperPrompt(
 			this.app,
@@ -233,13 +232,24 @@ export default class CooPlugin extends Plugin {
 	}
 
 	async loadSettings(): Promise<void> {
+		const saved = (await this.loadData()) as Partial<CooSettings> | null;
+		const isFirstUse = saved === null;
+
 		this.settings = {
 			...DEFAULT_SETTINGS,
-			...((await this.loadData()) as Partial<CooSettings> | null),
+			...saved,
 		};
 
-		// Migrate old flat-file names (e.g. "developer.en.md") to the
-		// new language-folder scheme (just "developer.md").
+		// Auto-detect locale on first use (no saved settings)
+		if (isFirstUse) {
+			const detectedLang = detectObsidianLocale();
+			this.settings = {
+				...this.settings,
+				responseLanguage: detectedLang,
+			};
+		}
+
+		// Migrate old prompt filenames
 		const migrated = migratePromptFilename(this.settings.systemPromptFile);
 		if (migrated !== this.settings.systemPromptFile) {
 			this.settings = { ...this.settings, systemPromptFile: migrated };
@@ -293,7 +303,7 @@ export default class CooPlugin extends Plugin {
 
 			const rewritten = await chatCompletion({
 				settings: this.settings,
-				systemPrompt: getBlockActionPrompt(
+				systemPrompt: getBlockActionSystemPrompt(
 					this.settings.responseLanguage,
 				),
 				userPrompt,
@@ -346,7 +356,9 @@ export default class CooPlugin extends Plugin {
 
 			const response = await chatCompletion({
 				settings: this.settings,
-				systemPrompt: getInspirePrompt(this.settings.responseLanguage),
+				systemPrompt: getBlockActionSystemPrompt(
+					this.settings.responseLanguage,
+				),
 				userPrompt,
 			});
 

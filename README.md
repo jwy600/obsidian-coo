@@ -76,15 +76,36 @@ Reload Obsidian (Cmd+R or Ctrl+R) → Settings → Community Plugins → enable 
 
 ## Settings
 
-| Setting              | Options                         | Default        | Description                                                          |
-| -------------------- | ------------------------------- | -------------- | -------------------------------------------------------------------- |
-| OpenAI API key       | —                               | (empty)        | Required. Your API key, stored locally                               |
-| Model                | `gpt-5.2`, `gpt-5-mini`         | `gpt-5.2`      | Which OpenAI model to use                                            |
-| Reasoning effort     | `none`, `low`, `medium`, `high` | `none`         | Controls depth of reasoning                                          |
-| Web search           | on / off                        | off            | Let the model search the web                                         |
-| Response language    | English, Chinese                | English        | Language for AI responses and system prompts                         |
-| Translation language | Chinese                         | Chinese        | Target language for the Translate action                             |
-| System prompt        | `developer.md`, `atomic.md`     | `developer.md` | Custom `.md` prompt file from `prompts/{lang}/` in the plugin folder |
+| Setting              | Options                                          | Default                  | Description                                                                                                      |
+| -------------------- | ------------------------------------------------ | ------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| OpenAI API key       | —                                                | (empty)                  | Required. Your API key, stored locally                                                                           |
+| Model                | `gpt-5.2`, `gpt-5-mini`                         | `gpt-5.2`               | Which OpenAI model to use                                                                                        |
+| Reasoning effort     | `none`, `low`, `medium`, `high`                  | `none`                   | Controls depth of reasoning                                                                                      |
+| Web search           | on / off                                         | off                      | Let the model search the web                                                                                     |
+| Response language    | English, Español, Français, 中文, 日本語         | Auto-detected from Obsidian locale | Language for AI responses. Applied as a runtime directive to all prompts                                |
+| Translation language | English, Español, Français, 中文, 日本語         | Chinese                  | Target language for the Translate action. Cannot match response language                                          |
+| System prompt        | `knowledgeassistant.md`, `atomic.md`, ...        | `knowledgeassistant.md`  | Custom `.md` prompt file from the `prompts/` folder in the plugin directory. Supports `<language>` tag for i18n   |
+
+## Custom system prompts
+
+The **System prompt** setting controls the persona used by the **Ask** command. coo ships with two defaults — `knowledgeassistant.md` (thorough explanations) and `atomic.md` (concise, atomic-note style) — but you can add your own.
+
+1. Open your vault's plugin folder: `<Your Vault>/.obsidian/plugins/obsidian-coo/prompts/`
+2. Create a new `.md` file (e.g. `socratic.md`) and write your system prompt inside it
+3. Go to **Settings → coo → System prompt** and select your file from the dropdown
+
+Your custom prompts can include a `<language></language>` tag. coo will automatically fill it with a language directive matching your **Response language** setting (or remove it entirely for English), so a single prompt file works across all languages.
+
+Example:
+
+```markdown
+You are a Socratic tutor who answers questions with guiding questions.
+
+<language></language>
+
+Never give direct answers. Instead, lead the student to discover the answer
+through a series of progressively more specific questions.
+```
 
 ## Web app deployment
 

@@ -12,7 +12,7 @@ The original Coo web app (Next.js + React + Zustand + Supabase + OpenAI). This p
 
 | Feature | Reference source | Plugin file |
 |---------|-----------------|-------------|
-| System prompts (EN/ZH developer + block-action) | `prompts/*.md` | `src/prompts.ts` + `src/prompt-loader.ts` |
+| System prompts (language-neutral with `<language>` tag) | `prompts/*.md` | `src/prompts.ts` + `src/prompt-loader.ts` |
 | Block actions (translate, example, expand, eli5, ask, rewrite, inspire) | `app/api/block-action/route.ts` | `src/prompts.ts` (`buildActionPrompt`) |
 | OpenAI Responses API (non-streaming) | `lib/api/openAiClient.ts` | `src/ai-client.ts` (raw `fetch`) |
 | Settings (model, reasoning, web search, language) | `lib/store/settings-slice.ts` | `src/settings.ts` |
@@ -57,14 +57,15 @@ npm run lint         # eslint (includes obsidian-specific rules)
 
 ```
 src/
-  main.ts            # Plugin lifecycle + 4 commands + context menu (~384 lines)
-  settings.ts        # CooSettings defaults, settings tab with 7 dropdowns/toggles (~180 lines)
-  types.ts           # Shared types: ModelType, BlockAction, CooSettings (~27 lines)
-  prompts.ts         # Block-action + inspire system prompts + buildActionPrompt() + developer prompt fallbacks (~166 lines)
-  prompt-loader.ts   # External .md prompt loading: ensure defaults, list files, load/migrate (~140 lines)
+  main.ts            # Plugin lifecycle + 4 commands + context menu + migration (~390 lines)
+  settings.ts        # CooSettingTab with 7 dropdowns/toggles, DEFAULT_SETTINGS, re-exports utils (~210 lines)
+  settings-utils.ts  # Pure functions: locale detection, language conflict checks (~45 lines)
+  types.ts           # Shared types + LANGUAGE_MAP, TRANSLATE_TO_RESPONSE_MAP, RESPONSE_TO_TRANSLATE_MAP (~60 lines)
+  prompts.ts         # Language-neutral prompts + replaceLanguageTag/prependLanguageDirective + buildActionPrompt (~155 lines)
+  prompt-loader.ts   # Flat prompts/ folder: ensure defaults, list, load, migrate folders+filenames (~175 lines)
   ai-client.ts       # OpenAI Responses API: chatCompletion (non-streaming only) (~130 lines)
   query-modal.ts     # Flow A modal: text input → AI → create note (~100 lines)
-  composer-modal.ts  # Flow B modal: ChatGPT-style composer with contenteditable area (~252 lines)
+  composer-modal.ts  # Flow B modal: ChatGPT-style composer with contenteditable area (~260 lines)
   editor-ops.ts      # Paragraph detection, %%annotation%% parsing/editing, inspire helpers (~310 lines)
 ```
 
@@ -75,10 +76,11 @@ Output: `main.js` + `manifest.json` + `styles.css` at repo root (loaded by Obsid
 | File | Purpose |
 |------|---------|
 | `src/main.ts` | `CooPlugin` class: `onload` registers 4 commands (`coo-ask`, `coo-discuss`, `coo-rewrite`, `coo-inspire`) + editor context menu. Private helpers `openDiscuss()`, `performRewrite()`, and `performInspire()` shared by command + context menu |
-| `src/settings.ts` | `DEFAULT_SETTINGS`, `CooSettingTab` with 7 settings (async `display()` loads prompt file list) |
+| `src/settings.ts` | `DEFAULT_SETTINGS`, `CooSettingTab` with 7 settings, re-exports from `settings-utils` |
+| `src/settings-utils.ts` | Pure helper functions: `mapLocaleToResponseLanguage()`, `detectObsidianLocale()`, `isLanguageConflict()`, `getDefaultTranslateLanguage()` |
 | `src/ai-client.ts` | `chatCompletion()` (non-streaming only) via raw fetch to Responses API |
-| `src/prompts.ts` | Block-action + inspire system prompts, `buildActionPrompt()` for all 7 actions, `getInspirePrompt()`, developer prompt fallback constants |
-| `src/prompt-loader.ts` | External `.md` prompt file management: `ensureDefaultPrompts()`, `listPromptFiles()`, `loadDeveloperPrompt()`, `migratePromptFilename()` |
+| `src/prompts.ts` | Language-neutral `BLOCK_ACTION_PROMPT` + `DEVELOPER_PROMPT_FALLBACK` with `<language>` tag, `replaceLanguageTag()`, `prependLanguageDirective()`, `getBlockActionSystemPrompt()`, `getTranslateSystemPrompt()`, `buildActionPrompt()` |
+| `src/prompt-loader.ts` | Flat `prompts/` folder management: `migratePromptFolders()`, `ensureDefaultPrompts()`, `listPromptFiles()`, `loadDeveloperPrompt()`, `migratePromptFilename()` |
 | `src/query-modal.ts` | Flow A: "Coo: Ask" — question input → creates new note with response |
 | `src/composer-modal.ts` | Flow B: "Coo: Discuss" — ChatGPT-style composer with contenteditable area, quick actions, phrase picking. All actions include surrounding document context |
 | `src/editor-ops.ts` | Paragraph bounds detection, `%%...%%` annotation CRUD, paragraph replacement, `extractInstruction()` / `formatInspireResponse()` / `replaceParagraphWithInspiration()` for inspire |
@@ -101,7 +103,7 @@ Select text in editor → command palette → ChatGPT-style composer modal with:
 Cursor in a paragraph that has a `%%...%%` annotation line below it → command palette (or right-click context menu) → AI rewrites the paragraph incorporating the annotations → paragraph replaced, annotation line removed. Ctrl+Z undoes.
 
 ### Flow D — "Coo: Inspire" (`coo-inspire`)
-Cursor in a paragraph that contains a `{instruction}` → command palette (or right-click context menu) → AI generates bullet points based on the instruction and paragraph context → bullet points appended after the paragraph, `{instruction}` removed from text. If the paragraph is a list item, bullets are nested (indented) under it. Ctrl+Z undoes. Uses a dedicated inspire system prompt that outputs 2-5 concise bullet points. Note: instructions cannot contain nested braces (e.g., `{explain {concept}}` won't work); use parentheses instead.
+Cursor in a paragraph that contains a `{instruction}` → command palette (or right-click context menu) → AI generates bullet points based on the instruction and paragraph context → bullet points appended after the paragraph, `{instruction}` removed from text. If the paragraph is a list item, bullets are nested (indented) under it. Ctrl+Z undoes. Uses the block-action system prompt with bullet-point formatting instructions in the user prompt. Note: instructions cannot contain nested braces (e.g., `{explain {concept}}` won't work); use parentheses instead.
 
 ## Annotation format
 
@@ -124,9 +126,33 @@ Some paragraph text that the user discussed with AI.
 | Model | dropdown | `gpt-5.2` | `gpt-5.2` or `gpt-5-mini` |
 | Reasoning effort | dropdown | `none` | `none` / `low` / `medium` / `high` — sent as `reasoning.effort` |
 | Web search | toggle | `false` | Sends `tools: [{ type: 'web_search' }]` |
-| Response language | dropdown | `en` | `en` / `zh` — selects block-action system prompt variant and `prompts/{lang}/` folder for developer prompt |
-| Translation language | dropdown | `Chinese` | Target for Translate action |
-| System prompt | dropdown | `developer.md` | File from `prompts/{lang}/` folder in plugin dir; user can add custom `.md` files per language |
+| Response language | dropdown | `en` | `en` / `es` / `fr` / `zh` / `ja` — auto-detected from Obsidian locale on first use. Applies language directive to all prompts at runtime |
+| Translation language | dropdown | `Chinese` | Target for Translate action. Cannot be the same as response language (auto-adjusted on conflict) |
+| System prompt | dropdown | `knowledgeassistant.md` | File from flat `prompts/` folder in plugin dir; supports `<language></language>` tag for runtime language injection |
+
+## Prompt system
+
+### Language injection
+
+Prompts are stored language-neutral. Language directives are injected at runtime:
+
+- **Developer prompts** (`.md` files in `prompts/`): Use `<language></language>` tag. `replaceLanguageTag()` fills it for non-English languages or removes it for English.
+- **Block-action prompt** (hardcoded): `prependLanguageDirective()` adds "Always respond in {language}." at the top for non-English.
+- **Translate action**: Uses `getTranslateSystemPrompt()` with the translation target language, independent of response language.
+
+### Prompt files
+
+Stored in flat `prompts/` folder (no per-language subfolders):
+- `knowledgeassistant.md` — deep explanation style (default)
+- `atomic.md` — concise atomic-note style
+- Users can add custom `.md` files; they appear in the settings dropdown
+
+### Migration
+
+On plugin load, `migratePromptFolders()` runs before `ensureDefaultPrompts()`:
+- Moves files from old `prompts/en/` and `prompts/zh/` into flat `prompts/`
+- Renames `developer.md` → `knowledgeassistant.md`
+- `migratePromptFilename()` handles the setting value migration
 
 ## API client details
 

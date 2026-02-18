@@ -1,7 +1,17 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
 import type CooPlugin from "./main";
-import type { CooSettings } from "./types";
+import type {
+	CooSettings,
+	TranslateLanguage,
+} from "./types";
+import { TRANSLATE_TO_RESPONSE_MAP } from "./types";
 import { listPromptFiles } from "./prompt-loader";
+import {
+	isLanguageConflict,
+	getDefaultTranslateLanguage,
+} from "./settings-utils";
+
+export { mapLocaleToResponseLanguage, detectObsidianLocale, isLanguageConflict, getDefaultTranslateLanguage } from "./settings-utils";
 
 export const DEFAULT_SETTINGS: CooSettings = {
 	apiKey: "",
@@ -10,8 +20,20 @@ export const DEFAULT_SETTINGS: CooSettings = {
 	webSearchEnabled: false,
 	responseLanguage: "en",
 	translateLanguage: "Chinese",
-	systemPromptFile: "developer.md",
+	systemPromptFile: "knowledgeassistant.md",
 };
+
+/** All available translate language options. */
+const ALL_TRANSLATE_OPTIONS: ReadonlyArray<{
+	value: TranslateLanguage;
+	label: string;
+}> = [
+	{ value: "English", label: "English" },
+	{ value: "Spanish", label: "Espa\u00f1ol" },
+	{ value: "French", label: "Fran\u00e7ais" },
+	{ value: "Chinese", label: "\u4e2d\u6587" },
+	{ value: "Japanese", label: "\u65e5\u672c\u8a9e" },
+];
 
 export class CooSettingTab extends PluginSettingTab {
 	plugin: CooPlugin;
@@ -28,7 +50,6 @@ export class CooSettingTab extends PluginSettingTab {
 		const promptFiles = await listPromptFiles(
 			this.app,
 			this.plugin.manifest.dir ?? "",
-			this.plugin.settings.responseLanguage,
 		);
 
 		new Setting(containerEl)
@@ -111,25 +132,44 @@ export class CooSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Response language")
-			.setDesc(
-				"Primary language for AI responses. " +
-					"Prompt files are loaded from the matching language folder.",
-			)
+			.setDesc("Primary language for AI responses.")
 			.addDropdown((dropdown) =>
 				dropdown
 					.addOption("en", "English")
-					.addOption("zh", "Chinese (简体中文)")
+					// eslint-disable-next-line obsidianmd/ui/sentence-case -- native language name
+					.addOption("es", "Espa\u00f1ol")
+					// eslint-disable-next-line obsidianmd/ui/sentence-case -- native language name
+					.addOption("fr", "Fran\u00e7ais")
+					// eslint-disable-next-line obsidianmd/ui/sentence-case -- native language name
+					.addOption("zh", "\u4e2d\u6587")
+					// eslint-disable-next-line obsidianmd/ui/sentence-case -- native language name
+					.addOption("ja", "\u65e5\u672c\u8a9e")
 					.setValue(this.plugin.settings.responseLanguage)
 					.onChange(async (value) => {
+						const newResponseLang =
+							value as CooSettings["responseLanguage"];
+
+						// Auto-adjust translate language if it now conflicts
+						let newTranslateLang =
+							this.plugin.settings.translateLanguage;
+						if (
+							isLanguageConflict(
+								newResponseLang,
+								newTranslateLang,
+							)
+						) {
+							newTranslateLang =
+								getDefaultTranslateLanguage(newResponseLang);
+						}
+
 						this.plugin.settings = {
 							...this.plugin.settings,
-							responseLanguage:
-								value as CooSettings["responseLanguage"],
+							responseLanguage: newResponseLang,
+							translateLanguage: newTranslateLang,
 						};
 						await this.plugin.saveSettings();
 						await this.plugin.reloadDeveloperPrompt();
-						// Re-render to update the system prompt dropdown
-						// with files from the new language folder.
+						// Re-render to update translate dropdown options
 						void this.display();
 					}),
 			);
@@ -138,12 +178,21 @@ export class CooSettingTab extends PluginSettingTab {
 			.setName("Translation language")
 			// eslint-disable-next-line obsidianmd/ui/sentence-case -- "Translate" is a feature name
 			.setDesc("Target language for the Translate action.")
-			.addDropdown((dropdown) =>
+			.addDropdown((dropdown) => {
+				const currentResponseLang =
+					this.plugin.settings.responseLanguage;
+
+				// Add all options except the one that conflicts with response language
+				for (const opt of ALL_TRANSLATE_OPTIONS) {
+					if (
+						TRANSLATE_TO_RESPONSE_MAP[opt.value] !==
+						currentResponseLang
+					) {
+						dropdown.addOption(opt.value, opt.label);
+					}
+				}
+
 				dropdown
-					.addOption("English", "English")
-					.addOption("Chinese", "Chinese")
-					.addOption("Spanish", "Spanish")
-					.addOption("French", "French")
 					.setValue(this.plugin.settings.translateLanguage)
 					.onChange(async (value) => {
 						this.plugin.settings = {
@@ -152,14 +201,14 @@ export class CooSettingTab extends PluginSettingTab {
 								value as CooSettings["translateLanguage"],
 						};
 						await this.plugin.saveSettings();
-					}),
-			);
+					});
+			});
 
 		new Setting(containerEl)
 			.setName("System prompt")
 			.setDesc(
 				"Choose a system prompt file for chat responses. " +
-					`Files are loaded from the prompts/${this.plugin.settings.responseLanguage}/ folder.`,
+					"Files are loaded from the prompts/ folder.",
 			)
 			.addDropdown((dropdown) => {
 				for (const file of promptFiles) {

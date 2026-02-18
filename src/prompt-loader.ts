@@ -1,43 +1,111 @@
 import type { App } from "obsidian";
 import type { ResponseLanguage } from "./types";
-import {
-	DEVELOPER_PROMPT_EN_FALLBACK,
-	DEVELOPER_PROMPT_ZH_FALLBACK,
-} from "./prompts";
+import { DEVELOPER_PROMPT_FALLBACK, replaceLanguageTag } from "./prompts";
 
 const PROMPTS_FOLDER = "prompts";
 
+/** Prompt file definitions for ensureDefaultPrompts. */
 const DEFAULT_PROMPT_FILES: ReadonlyArray<{
-	lang: ResponseLanguage;
 	filename: string;
 	content: string;
 }> = [
 	{
-		lang: "en",
-		filename: "developer.md",
-		content: DEVELOPER_PROMPT_EN_FALLBACK,
+		filename: "knowledgeassistant.md",
+		content: DEVELOPER_PROMPT_FALLBACK,
 	},
 	{
-		lang: "zh",
-		filename: "developer.md",
-		content: DEVELOPER_PROMPT_ZH_FALLBACK,
+		filename: "atomic.md",
+		content: `You are a concise assistant that produces atomic, self-contained notes.
+
+<language></language>
+<response_approach>
+- Give one clear, focused answer per question
+- Each response should stand alone as a complete thought
+- Prefer brevity over thoroughness — omit what isn't essential
+</response_approach>
+
+<structure>
+- Lead with the key insight (1 sentence)
+- Add 1-2 supporting details if needed
+- No headers unless the topic has genuinely distinct parts
+</structure>
+
+<formatting>
+- Use Markdown **only where semantically correct** (e.g., \`inline code\`, \`\`\`code fences\`\`\`)
+- Use backticks to format file, directory, function, and class names
+- Use $ for inline math and $$ for block math (Obsidian MathJax format). NEVER use \\( \\) or \\[ \\] delimiters.
+- NEVER use numbered lists (1, 2, 3). If sequence matters, use letters (a, b, c) instead
+</formatting>
+
+<avoid>
+- Long explanations when a short one suffices
+- Repetition and filler phrases
+- Headers and bullet lists for simple answers
+</avoid>`,
 	},
 ];
 
-function langFolderPath(pluginDir: string, lang: ResponseLanguage): string {
-	return `${pluginDir}/${PROMPTS_FOLDER}/${lang}`;
+function promptsFolderPath(pluginDir: string): string {
+	return `${pluginDir}/${PROMPTS_FOLDER}`;
 }
 
-function promptFilePath(
-	pluginDir: string,
-	lang: ResponseLanguage,
-	filename: string,
-): string {
-	return `${langFolderPath(pluginDir, lang)}/${filename}`;
+function promptFilePath(pluginDir: string, filename: string): string {
+	return `${promptsFolderPath(pluginDir)}/${filename}`;
 }
 
 /**
- * Ensure prompts/en/ and prompts/zh/ folders exist with default files.
+ * Migrate old per-language prompt folders into the flat prompts/ structure.
+ *
+ * a) Moves files from prompts/en/ and prompts/zh/ into prompts/ (skips if target exists).
+ * b) Removes emptied language subfolders.
+ * c) Renames developer.md -> knowledgeassistant.md (if target doesn't exist).
+ */
+export async function migratePromptFolders(
+	app: App,
+	pluginDir: string,
+): Promise<void> {
+	const adapter = app.vault.adapter;
+	const baseFolder = promptsFolderPath(pluginDir);
+
+	for (const lang of ["en", "zh"]) {
+		const langFolder = `${baseFolder}/${lang}`;
+		if (!(await adapter.exists(langFolder))) continue;
+
+		const listing = await adapter.list(langFolder);
+		for (const filePath of listing.files) {
+			const filename = filePath.split("/").pop() ?? "";
+			if (!filename) continue;
+
+			const targetPath = `${baseFolder}/${filename}`;
+			if (!(await adapter.exists(targetPath))) {
+				const content = await adapter.read(filePath);
+				await adapter.write(targetPath, content);
+			}
+			await adapter.remove(filePath);
+		}
+
+		// Remove the now-empty language subfolder
+		const remaining = await adapter.list(langFolder);
+		if (remaining.files.length === 0 && remaining.folders.length === 0) {
+			await adapter.rmdir(langFolder, false);
+		}
+	}
+
+	// Rename developer.md -> knowledgeassistant.md
+	const oldPath = `${baseFolder}/developer.md`;
+	const newPath = `${baseFolder}/knowledgeassistant.md`;
+	if (
+		(await adapter.exists(oldPath)) &&
+		!(await adapter.exists(newPath))
+	) {
+		const content = await adapter.read(oldPath);
+		await adapter.write(newPath, content);
+		await adapter.remove(oldPath);
+	}
+}
+
+/**
+ * Ensure prompts/ folder exists with default prompt files.
  * Never overwrites existing files (preserves user edits).
  */
 export async function ensureDefaultPrompts(
@@ -45,19 +113,14 @@ export async function ensureDefaultPrompts(
 	pluginDir: string,
 ): Promise<void> {
 	const adapter = app.vault.adapter;
-	const baseFolder = `${pluginDir}/${PROMPTS_FOLDER}`;
+	const baseFolder = promptsFolderPath(pluginDir);
 
 	if (!(await adapter.exists(baseFolder))) {
 		await adapter.mkdir(baseFolder);
 	}
 
-	for (const { lang, filename, content } of DEFAULT_PROMPT_FILES) {
-		const folder = langFolderPath(pluginDir, lang);
-		if (!(await adapter.exists(folder))) {
-			await adapter.mkdir(folder);
-		}
-
-		const path = promptFilePath(pluginDir, lang, filename);
+	for (const { filename, content } of DEFAULT_PROMPT_FILES) {
+		const path = promptFilePath(pluginDir, filename);
 		if (!(await adapter.exists(path))) {
 			await adapter.write(path, content);
 		}
@@ -65,14 +128,13 @@ export async function ensureDefaultPrompts(
 }
 
 /**
- * List all .md filenames in prompts/{lang}/, sorted alphabetically.
+ * List all .md filenames in the flat prompts/ folder, sorted alphabetically.
  */
 export async function listPromptFiles(
 	app: App,
 	pluginDir: string,
-	lang: ResponseLanguage,
 ): Promise<string[]> {
-	const folder = langFolderPath(pluginDir, lang);
+	const folder = promptsFolderPath(pluginDir);
 	const adapter = app.vault.adapter;
 
 	if (!(await adapter.exists(folder))) {
@@ -87,16 +149,15 @@ export async function listPromptFiles(
 }
 
 /**
- * Load and trim the content of a prompt file from prompts/{lang}/.
+ * Load and trim the content of a prompt file from prompts/.
  * Returns null if the file does not exist or is empty.
  */
 export async function loadPromptFile(
 	app: App,
 	pluginDir: string,
-	lang: ResponseLanguage,
 	filename: string,
 ): Promise<string | null> {
-	const path = promptFilePath(pluginDir, lang, filename);
+	const path = promptFilePath(pluginDir, filename);
 	const adapter = app.vault.adapter;
 
 	if (!(await adapter.exists(path))) {
@@ -109,9 +170,11 @@ export async function loadPromptFile(
 }
 
 /**
- * Load the developer system prompt from prompts/{lang}/{filename}.
- * If the file is missing or empty, falls back to the hardcoded prompt
- * for the given language.
+ * Load the developer system prompt from prompts/{filename},
+ * then apply the language tag replacement.
+ *
+ * If the file is missing or empty, falls back to the hardcoded
+ * DEVELOPER_PROMPT_FALLBACK with language tag applied.
  */
 export async function loadDeveloperPrompt(
 	app: App,
@@ -119,22 +182,27 @@ export async function loadDeveloperPrompt(
 	lang: ResponseLanguage,
 	filename: string,
 ): Promise<{ content: string; usedFallback: boolean }> {
-	const loaded = await loadPromptFile(app, pluginDir, lang, filename);
+	const loaded = await loadPromptFile(app, pluginDir, filename);
 	if (loaded) {
-		return { content: loaded, usedFallback: false };
+		return { content: replaceLanguageTag(loaded, lang), usedFallback: false };
 	}
-	const fallback =
-		lang === "zh"
-			? DEVELOPER_PROMPT_ZH_FALLBACK
-			: DEVELOPER_PROMPT_EN_FALLBACK;
-	return { content: fallback, usedFallback: true };
+	return {
+		content: replaceLanguageTag(DEVELOPER_PROMPT_FALLBACK, lang),
+		usedFallback: true,
+	};
 }
 
 /**
- * Migrate old flat-file prompt names (e.g. "developer.en.md") to the
- * language-folder scheme (e.g. "developer.md"). Returns the filename
- * unchanged if it doesn't match the old pattern.
+ * Migrate old prompt filenames to new names.
+ * - "developer.md", "developer.en.md", "developer.zh.md" -> "knowledgeassistant.md"
  */
 export function migratePromptFilename(filename: string): string {
-	return filename.replace(/\.(en|zh)\.md$/, ".md");
+	if (
+		filename === "developer.md" ||
+		filename === "developer.en.md" ||
+		filename === "developer.zh.md"
+	) {
+		return "knowledgeassistant.md";
+	}
+	return filename;
 }

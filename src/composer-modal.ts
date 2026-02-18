@@ -1,7 +1,11 @@
 import { App, Editor, Modal, Notice } from "obsidian";
 import type { BlockAction, CooSettings } from "./types";
 import { chatCompletion } from "./ai-client";
-import { getBlockActionPrompt, buildActionPrompt } from "./prompts";
+import {
+	getBlockActionSystemPrompt,
+	getTranslateSystemPrompt,
+	buildActionPrompt,
+} from "./prompts";
 import {
 	findParagraphBounds,
 	appendAnnotations,
@@ -200,11 +204,19 @@ export class CooComposer extends Modal {
 				this.surroundingContext || undefined,
 			);
 
+			// Translate action uses the translate language; others use response language
+			const systemPrompt =
+				action === "translate"
+					? getTranslateSystemPrompt(
+							this.settings.translateLanguage,
+						)
+					: getBlockActionSystemPrompt(
+							this.settings.responseLanguage,
+						);
+
 			const response = await chatCompletion({
 				settings: this.settings,
-				systemPrompt: getBlockActionPrompt(
-					this.settings.responseLanguage,
-				),
+				systemPrompt,
 				userPrompt,
 			});
 
@@ -241,7 +253,7 @@ export class CooComposer extends Modal {
 
 			const response = await chatCompletion({
 				settings: this.settings,
-				systemPrompt: getBlockActionPrompt(
+				systemPrompt: getBlockActionSystemPrompt(
 					this.settings.responseLanguage,
 				),
 				userPrompt,

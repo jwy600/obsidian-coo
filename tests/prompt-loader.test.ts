@@ -1,15 +1,13 @@
 import { describe, it, expect, vi } from "vitest";
 import {
+	migratePromptFolders,
 	ensureDefaultPrompts,
 	listPromptFiles,
 	loadPromptFile,
 	loadDeveloperPrompt,
 	migratePromptFilename,
 } from "../src/prompt-loader";
-import {
-	DEVELOPER_PROMPT_EN_FALLBACK,
-	DEVELOPER_PROMPT_ZH_FALLBACK,
-} from "../src/prompts";
+import { DEVELOPER_PROMPT_FALLBACK } from "../src/prompts";
 
 interface MockAdapter {
 	exists: ReturnType<typeof vi.fn>;
@@ -17,6 +15,8 @@ interface MockAdapter {
 	write: ReturnType<typeof vi.fn>;
 	mkdir: ReturnType<typeof vi.fn>;
 	list: ReturnType<typeof vi.fn>;
+	remove: ReturnType<typeof vi.fn>;
+	rmdir: ReturnType<typeof vi.fn>;
 }
 
 /** Create an in-memory mock of app.vault.adapter for testing. */
@@ -24,6 +24,7 @@ function createMockApp(files: Record<string, string> = {}): {
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	app: any;
 	adapter: MockAdapter;
+	fs: Map<string, string>;
 } {
 	const fs = new Map(Object.entries(files));
 
@@ -42,71 +43,145 @@ function createMockApp(files: Record<string, string> = {}): {
 			fs.set(path, "__DIR__");
 		}),
 		list: vi.fn(async (folder: string) => {
-			const matched: string[] = [];
+			const matchedFiles: string[] = [];
+			const matchedFolders: string[] = [];
 			for (const key of fs.keys()) {
 				if (
 					key.startsWith(folder + "/") &&
-					!key.includes("/", folder.length + 1) &&
-					fs.get(key) !== "__DIR__"
+					!key.includes("/", folder.length + 1)
 				) {
-					matched.push(key);
+					if (fs.get(key) === "__DIR__") {
+						matchedFolders.push(key);
+					} else {
+						matchedFiles.push(key);
+					}
 				}
 			}
-			return { files: matched, folders: [] };
+			return { files: matchedFiles, folders: matchedFolders };
+		}),
+		remove: vi.fn(async (path: string) => {
+			fs.delete(path);
+		}),
+		rmdir: vi.fn(async (path: string) => {
+			fs.delete(path);
 		}),
 	};
 
-	return { app: { vault: { adapter } }, adapter };
+	return { app: { vault: { adapter } }, adapter, fs };
 }
 
 const PLUGIN_DIR = ".obsidian/plugins/obsidian-coo";
-const EN_DIR = `${PLUGIN_DIR}/prompts/en`;
-const ZH_DIR = `${PLUGIN_DIR}/prompts/zh`;
+const PROMPTS_DIR = `${PLUGIN_DIR}/prompts`;
+
+describe("migratePromptFolders", () => {
+	it("moves files from en/ and zh/ into flat prompts/ and renames developer.md", async () => {
+		const { app, fs } = createMockApp({
+			[`${PROMPTS_DIR}`]: "__DIR__",
+			[`${PROMPTS_DIR}/en`]: "__DIR__",
+			[`${PROMPTS_DIR}/zh`]: "__DIR__",
+			[`${PROMPTS_DIR}/en/developer.md`]: "EN content",
+			[`${PROMPTS_DIR}/zh/developer.md`]: "ZH content",
+		});
+
+		await migratePromptFolders(app, PLUGIN_DIR);
+
+		// developer.md is first moved to flat, then renamed to knowledgeassistant.md
+		expect(fs.has(`${PROMPTS_DIR}/knowledgeassistant.md`)).toBe(true);
+		// Old files should be removed
+		expect(fs.has(`${PROMPTS_DIR}/en/developer.md`)).toBe(false);
+		expect(fs.has(`${PROMPTS_DIR}/zh/developer.md`)).toBe(false);
+	});
+
+	it("renames developer.md to knowledgeassistant.md", async () => {
+		const { app, fs } = createMockApp({
+			[`${PROMPTS_DIR}`]: "__DIR__",
+			[`${PROMPTS_DIR}/developer.md`]: "Old content",
+		});
+
+		await migratePromptFolders(app, PLUGIN_DIR);
+
+		expect(fs.has(`${PROMPTS_DIR}/knowledgeassistant.md`)).toBe(true);
+		expect(fs.has(`${PROMPTS_DIR}/developer.md`)).toBe(false);
+	});
+
+	it("does not overwrite existing knowledgeassistant.md", async () => {
+		const { app, fs } = createMockApp({
+			[`${PROMPTS_DIR}`]: "__DIR__",
+			[`${PROMPTS_DIR}/developer.md`]: "Old content",
+			[`${PROMPTS_DIR}/knowledgeassistant.md`]: "User's custom prompt",
+		});
+
+		await migratePromptFolders(app, PLUGIN_DIR);
+
+		expect(fs.get(`${PROMPTS_DIR}/knowledgeassistant.md`)).toBe(
+			"User's custom prompt",
+		);
+	});
+
+	it("does nothing when language folders don't exist", async () => {
+		const { app, adapter } = createMockApp({
+			[`${PROMPTS_DIR}`]: "__DIR__",
+		});
+
+		await migratePromptFolders(app, PLUGIN_DIR);
+
+		expect(adapter.remove).not.toHaveBeenCalled();
+	});
+
+	it("skips moving if target file already exists in flat folder", async () => {
+		const { app, fs } = createMockApp({
+			[`${PROMPTS_DIR}`]: "__DIR__",
+			[`${PROMPTS_DIR}/en`]: "__DIR__",
+			[`${PROMPTS_DIR}/en/custom.md`]: "EN custom",
+			[`${PROMPTS_DIR}/custom.md`]: "Existing flat custom",
+		});
+
+		await migratePromptFolders(app, PLUGIN_DIR);
+
+		// Flat file is preserved, not overwritten
+		expect(fs.get(`${PROMPTS_DIR}/custom.md`)).toBe("Existing flat custom");
+	});
+});
 
 describe("ensureDefaultPrompts", () => {
-	it("creates language folders and default files when they do not exist", async () => {
+	it("creates prompts/ folder and default files when they do not exist", async () => {
 		const { app, adapter } = createMockApp();
 
 		await ensureDefaultPrompts(app, PLUGIN_DIR);
 
-		expect(adapter.mkdir).toHaveBeenCalledWith(`${PLUGIN_DIR}/prompts`);
-		expect(adapter.mkdir).toHaveBeenCalledWith(EN_DIR);
-		expect(adapter.mkdir).toHaveBeenCalledWith(ZH_DIR);
+		expect(adapter.mkdir).toHaveBeenCalledWith(PROMPTS_DIR);
 		expect(adapter.write).toHaveBeenCalledTimes(2);
 		expect(adapter.write).toHaveBeenCalledWith(
-			`${EN_DIR}/developer.md`,
+			`${PROMPTS_DIR}/knowledgeassistant.md`,
 			expect.stringContaining("knowledgeable assistant"),
 		);
 		expect(adapter.write).toHaveBeenCalledWith(
-			`${ZH_DIR}/developer.md`,
-			expect.stringContaining("简体中文"),
+			`${PROMPTS_DIR}/atomic.md`,
+			expect.stringContaining("atomic"),
 		);
 	});
 
 	it("does not overwrite existing files", async () => {
 		const { app, adapter } = createMockApp({
-			[`${PLUGIN_DIR}/prompts`]: "__DIR__",
-			[EN_DIR]: "__DIR__",
-			[`${EN_DIR}/developer.md`]: "My custom prompt",
+			[PROMPTS_DIR]: "__DIR__",
+			[`${PROMPTS_DIR}/knowledgeassistant.md`]: "My custom prompt",
 		});
 
 		await ensureDefaultPrompts(app, PLUGIN_DIR);
 
-		// Should only write the missing zh file
+		// Should only write the missing atomic.md
 		expect(adapter.write).toHaveBeenCalledTimes(1);
 		expect(adapter.write).toHaveBeenCalledWith(
-			`${ZH_DIR}/developer.md`,
+			`${PROMPTS_DIR}/atomic.md`,
 			expect.any(String),
 		);
 	});
 
 	it("does nothing when all defaults exist", async () => {
 		const { app, adapter } = createMockApp({
-			[`${PLUGIN_DIR}/prompts`]: "__DIR__",
-			[EN_DIR]: "__DIR__",
-			[ZH_DIR]: "__DIR__",
-			[`${EN_DIR}/developer.md`]: "custom en",
-			[`${ZH_DIR}/developer.md`]: "custom zh",
+			[PROMPTS_DIR]: "__DIR__",
+			[`${PROMPTS_DIR}/knowledgeassistant.md`]: "custom",
+			[`${PROMPTS_DIR}/atomic.md`]: "custom",
 		});
 
 		await ensureDefaultPrompts(app, PLUGIN_DIR);
@@ -116,45 +191,39 @@ describe("ensureDefaultPrompts", () => {
 });
 
 describe("listPromptFiles", () => {
-	it("returns sorted .md filenames for the given language", async () => {
+	it("returns sorted .md filenames from flat prompts/", async () => {
 		const { app } = createMockApp({
-			[EN_DIR]: "__DIR__",
-			[`${EN_DIR}/developer.md`]: "content",
-			[`${EN_DIR}/custom.md`]: "content",
+			[PROMPTS_DIR]: "__DIR__",
+			[`${PROMPTS_DIR}/knowledgeassistant.md`]: "content",
+			[`${PROMPTS_DIR}/atomic.md`]: "content",
+			[`${PROMPTS_DIR}/custom.md`]: "content",
 		});
 
-		const files = await listPromptFiles(app, PLUGIN_DIR, "en");
+		const files = await listPromptFiles(app, PLUGIN_DIR);
 
-		expect(files).toEqual(["custom.md", "developer.md"]);
+		expect(files).toEqual([
+			"atomic.md",
+			"custom.md",
+			"knowledgeassistant.md",
+		]);
 	});
 
-	it("returns files for zh folder independently", async () => {
-		const { app } = createMockApp({
-			[ZH_DIR]: "__DIR__",
-			[`${ZH_DIR}/developer.md`]: "content",
-		});
-
-		const files = await listPromptFiles(app, PLUGIN_DIR, "zh");
-
-		expect(files).toEqual(["developer.md"]);
-	});
-
-	it("returns empty array when language folder does not exist", async () => {
+	it("returns empty array when prompts folder does not exist", async () => {
 		const { app } = createMockApp();
 
-		const files = await listPromptFiles(app, PLUGIN_DIR, "en");
+		const files = await listPromptFiles(app, PLUGIN_DIR);
 
 		expect(files).toEqual([]);
 	});
 
 	it("filters out non-.md files", async () => {
 		const { app } = createMockApp({
-			[EN_DIR]: "__DIR__",
-			[`${EN_DIR}/prompt.md`]: "content",
-			[`${EN_DIR}/notes.txt`]: "content",
+			[PROMPTS_DIR]: "__DIR__",
+			[`${PROMPTS_DIR}/prompt.md`]: "content",
+			[`${PROMPTS_DIR}/notes.txt`]: "content",
 		});
 
-		const files = await listPromptFiles(app, PLUGIN_DIR, "en");
+		const files = await listPromptFiles(app, PLUGIN_DIR);
 
 		expect(files).toEqual(["prompt.md"]);
 	});
@@ -163,10 +232,10 @@ describe("listPromptFiles", () => {
 describe("loadPromptFile", () => {
 	it("returns trimmed content for existing file", async () => {
 		const { app } = createMockApp({
-			[`${EN_DIR}/test.md`]: "  Hello world  \n",
+			[`${PROMPTS_DIR}/test.md`]: "  Hello world  \n",
 		});
 
-		const content = await loadPromptFile(app, PLUGIN_DIR, "en", "test.md");
+		const content = await loadPromptFile(app, PLUGIN_DIR, "test.md");
 
 		expect(content).toBe("Hello world");
 	});
@@ -174,31 +243,46 @@ describe("loadPromptFile", () => {
 	it("returns null for missing file", async () => {
 		const { app } = createMockApp();
 
-		const content = await loadPromptFile(
-			app,
-			PLUGIN_DIR,
-			"en",
-			"missing.md",
-		);
+		const content = await loadPromptFile(app, PLUGIN_DIR, "missing.md");
 
 		expect(content).toBeNull();
 	});
 
 	it("returns null for empty file", async () => {
 		const { app } = createMockApp({
-			[`${EN_DIR}/empty.md`]: "   \n  ",
+			[`${PROMPTS_DIR}/empty.md`]: "   \n  ",
 		});
 
-		const content = await loadPromptFile(app, PLUGIN_DIR, "en", "empty.md");
+		const content = await loadPromptFile(app, PLUGIN_DIR, "empty.md");
 
 		expect(content).toBeNull();
 	});
 });
 
 describe("loadDeveloperPrompt", () => {
-	it("returns file content when file exists", async () => {
+	it("returns file content with language tag replaced", async () => {
 		const { app } = createMockApp({
-			[`${EN_DIR}/custom.md`]: "Custom prompt content",
+			[`${PROMPTS_DIR}/custom.md`]:
+				"Custom prompt.\n<language></language>\nMore text.",
+		});
+
+		const result = await loadDeveloperPrompt(
+			app,
+			PLUGIN_DIR,
+			"zh",
+			"custom.md",
+		);
+
+		expect(result.content).toContain(
+			"Always respond in Simplified Chinese.",
+		);
+		expect(result.usedFallback).toBe(false);
+	});
+
+	it("removes language tag for English", async () => {
+		const { app } = createMockApp({
+			[`${PROMPTS_DIR}/custom.md`]:
+				"Custom prompt.\n<language></language>\nMore text.",
 		});
 
 		const result = await loadDeveloperPrompt(
@@ -208,11 +292,11 @@ describe("loadDeveloperPrompt", () => {
 			"custom.md",
 		);
 
-		expect(result.content).toBe("Custom prompt content");
+		expect(result.content).not.toContain("<language>");
 		expect(result.usedFallback).toBe(false);
 	});
 
-	it("falls back to EN hardcoded prompt when en file is missing", async () => {
+	it("falls back to hardcoded prompt when file is missing", async () => {
 		const { app } = createMockApp();
 
 		const result = await loadDeveloperPrompt(
@@ -222,11 +306,13 @@ describe("loadDeveloperPrompt", () => {
 			"missing.md",
 		);
 
-		expect(result.content).toBe(DEVELOPER_PROMPT_EN_FALLBACK);
+		// English: language tag removed from fallback
+		expect(result.content).toContain("knowledgeable assistant");
+		expect(result.content).not.toContain("<language></language>");
 		expect(result.usedFallback).toBe(true);
 	});
 
-	it("falls back to ZH hardcoded prompt when zh file is missing", async () => {
+	it("falls back with language directive for zh", async () => {
 		const { app } = createMockApp();
 
 		const result = await loadDeveloperPrompt(
@@ -236,13 +322,15 @@ describe("loadDeveloperPrompt", () => {
 			"missing.md",
 		);
 
-		expect(result.content).toBe(DEVELOPER_PROMPT_ZH_FALLBACK);
+		expect(result.content).toContain(
+			"Always respond in Simplified Chinese.",
+		);
 		expect(result.usedFallback).toBe(true);
 	});
 
 	it("falls back when file is empty", async () => {
 		const { app } = createMockApp({
-			[`${EN_DIR}/empty.md`]: "  \n  ",
+			[`${PROMPTS_DIR}/empty.md`]: "  \n  ",
 		});
 
 		const result = await loadDeveloperPrompt(
@@ -252,31 +340,46 @@ describe("loadDeveloperPrompt", () => {
 			"empty.md",
 		);
 
-		expect(result.content).toBe(DEVELOPER_PROMPT_EN_FALLBACK);
+		expect(result.content).toBe(
+			DEVELOPER_PROMPT_FALLBACK.replace(
+				/\n?<language><\/language>\n?/,
+				"\n",
+			),
+		);
 		expect(result.usedFallback).toBe(true);
 	});
 });
 
 describe("migratePromptFilename", () => {
-	it("strips .en from old-style English filename", () => {
-		expect(migratePromptFilename("developer.en.md")).toBe("developer.md");
+	it('migrates "developer.md" to "knowledgeassistant.md"', () => {
+		expect(migratePromptFilename("developer.md")).toBe(
+			"knowledgeassistant.md",
+		);
 	});
 
-	it("strips .zh from old-style Chinese filename", () => {
-		expect(migratePromptFilename("developer.zh.md")).toBe("developer.md");
+	it('migrates "developer.en.md" to "knowledgeassistant.md"', () => {
+		expect(migratePromptFilename("developer.en.md")).toBe(
+			"knowledgeassistant.md",
+		);
 	});
 
-	it("leaves new-style filename unchanged", () => {
-		expect(migratePromptFilename("developer.md")).toBe("developer.md");
+	it('migrates "developer.zh.md" to "knowledgeassistant.md"', () => {
+		expect(migratePromptFilename("developer.zh.md")).toBe(
+			"knowledgeassistant.md",
+		);
 	});
 
 	it("leaves custom filenames unchanged", () => {
 		expect(migratePromptFilename("my-prompt.md")).toBe("my-prompt.md");
 	});
 
-	it("only strips .en/.zh at the end before .md", () => {
-		expect(migratePromptFilename("english.notes.md")).toBe(
-			"english.notes.md",
+	it("leaves knowledgeassistant.md unchanged", () => {
+		expect(migratePromptFilename("knowledgeassistant.md")).toBe(
+			"knowledgeassistant.md",
 		);
+	});
+
+	it("leaves atomic.md unchanged", () => {
+		expect(migratePromptFilename("atomic.md")).toBe("atomic.md");
 	});
 });

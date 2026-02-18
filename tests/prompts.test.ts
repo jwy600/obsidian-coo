@@ -1,52 +1,122 @@
 import { describe, it, expect } from "vitest";
 import {
 	buildActionPrompt,
-	getBlockActionPrompt,
-	getInspirePrompt,
-	DEVELOPER_PROMPT_EN_FALLBACK,
-	DEVELOPER_PROMPT_ZH_FALLBACK,
+	replaceLanguageTag,
+	prependLanguageDirective,
+	getBlockActionSystemPrompt,
+	getTranslateSystemPrompt,
+	DEVELOPER_PROMPT_FALLBACK,
 } from "../src/prompts";
 
-describe("developer prompt fallback constants", () => {
-	it("EN fallback contains expected content", () => {
-		expect(DEVELOPER_PROMPT_EN_FALLBACK).toContain(
-			"knowledgeable assistant",
-		);
-		expect(DEVELOPER_PROMPT_EN_FALLBACK).not.toContain("简体中文");
+describe("DEVELOPER_PROMPT_FALLBACK", () => {
+	it("contains the language tag placeholder", () => {
+		expect(DEVELOPER_PROMPT_FALLBACK).toContain("<language></language>");
 	});
 
-	it("ZH fallback contains expected content", () => {
-		expect(DEVELOPER_PROMPT_ZH_FALLBACK).toContain("简体中文");
-		expect(DEVELOPER_PROMPT_ZH_FALLBACK).toContain(
-			"knowledgeable assistant",
-		);
+	it("contains expected content", () => {
+		expect(DEVELOPER_PROMPT_FALLBACK).toContain("knowledgeable assistant");
 	});
 });
 
-describe("getBlockActionPrompt", () => {
-	it('returns English prompt for "en"', () => {
-		const result = getBlockActionPrompt("en");
+describe("replaceLanguageTag", () => {
+	const template = "Hello.\n<language></language>\nWorld.";
+
+	it("removes the tag entirely for English", () => {
+		const result = replaceLanguageTag(template, "en");
+		expect(result).not.toContain("<language>");
+		expect(result).not.toContain("</language>");
+		expect(result).toContain("Hello.");
+		expect(result).toContain("World.");
+	});
+
+	it("fills the tag for Chinese", () => {
+		const result = replaceLanguageTag(template, "zh");
+		expect(result).toContain("Always respond in Simplified Chinese.");
+		expect(result).toContain("<language>");
+	});
+
+	it("fills the tag for Japanese", () => {
+		const result = replaceLanguageTag(template, "ja");
+		expect(result).toContain("Always respond in Japanese.");
+	});
+
+	it("fills the tag for Spanish", () => {
+		const result = replaceLanguageTag(template, "es");
+		expect(result).toContain("Always respond in Spanish.");
+	});
+
+	it("fills the tag for French", () => {
+		const result = replaceLanguageTag(template, "fr");
+		expect(result).toContain("Always respond in French.");
+	});
+});
+
+describe("prependLanguageDirective", () => {
+	const prompt = "Some system prompt.";
+
+	it("returns prompt unchanged for English", () => {
+		expect(prependLanguageDirective(prompt, "en")).toBe(prompt);
+	});
+
+	it("prepends directive for Chinese", () => {
+		const result = prependLanguageDirective(prompt, "zh");
+		expect(result).toBe(
+			"Always respond in Simplified Chinese.\n\nSome system prompt.",
+		);
+	});
+
+	it("prepends directive for Japanese", () => {
+		const result = prependLanguageDirective(prompt, "ja");
+		expect(result).toMatch(/^Always respond in Japanese\./);
+		expect(result).toContain(prompt);
+	});
+});
+
+describe("getBlockActionSystemPrompt", () => {
+	it("returns the block action prompt without directive for English", () => {
+		const result = getBlockActionSystemPrompt("en");
 		expect(result).toContain("plain text only");
-		expect(result).not.toContain("简体中文");
+		expect(result).not.toContain("Always respond in");
 	});
 
-	it('returns Chinese prompt for "zh"', () => {
-		const result = getBlockActionPrompt("zh");
-		expect(result).toContain("简体中文");
+	it("prepends language directive for Chinese", () => {
+		const result = getBlockActionSystemPrompt("zh");
+		expect(result).toContain("Always respond in Simplified Chinese.");
+		expect(result).toContain("plain text only");
+	});
+
+	it("prepends language directive for Japanese", () => {
+		const result = getBlockActionSystemPrompt("ja");
+		expect(result).toContain("Always respond in Japanese.");
+		expect(result).toContain("plain text only");
+	});
+
+	it("prepends language directive for Spanish", () => {
+		const result = getBlockActionSystemPrompt("es");
+		expect(result).toContain("Always respond in Spanish.");
+	});
+
+	it("prepends language directive for French", () => {
+		const result = getBlockActionSystemPrompt("fr");
+		expect(result).toContain("Always respond in French.");
 	});
 });
 
-describe("getInspirePrompt", () => {
-	it('returns English prompt for "en"', () => {
-		const result = getInspirePrompt("en");
-		expect(result).toContain("bullet points");
-		expect(result).not.toContain("简体中文");
+describe("getTranslateSystemPrompt", () => {
+	it("includes translate language name for Chinese", () => {
+		const result = getTranslateSystemPrompt("Chinese");
+		expect(result).toContain("Always respond in Chinese.");
+		expect(result).toContain("plain text only");
 	});
 
-	it('returns Chinese prompt for "zh"', () => {
-		const result = getInspirePrompt("zh");
-		expect(result).toContain("简体中文");
-		expect(result).toContain("bullet points");
+	it("includes translate language name for English", () => {
+		const result = getTranslateSystemPrompt("English");
+		expect(result).toContain("Always respond in English.");
+	});
+
+	it("includes translate language name for Japanese", () => {
+		const result = getTranslateSystemPrompt("Japanese");
+		expect(result).toContain("Always respond in Japanese.");
 	});
 });
 
@@ -127,7 +197,7 @@ describe("buildActionPrompt", () => {
 		expect(result).toBe("Give one concrete example of this:\n\nhello");
 	});
 
-	it("inspire action with instruction", () => {
+	it("inspire action with instruction includes bullet formatting", () => {
 		const result = buildActionPrompt(
 			"inspire",
 			sampleText,
@@ -137,11 +207,15 @@ describe("buildActionPrompt", () => {
 		expect(result).toContain(
 			"Instruction: explain from bayesian perspective",
 		);
+		expect(result).toContain(
+			"Provide 2-5 related insights as bullet points",
+		);
 	});
 
 	it("inspire action without instruction uses empty string", () => {
 		const result = buildActionPrompt("inspire", sampleText);
 		expect(result).toContain("Instruction: ");
+		expect(result).toContain("bullet points");
 	});
 
 	it("inspire action includes document context when provided", () => {
