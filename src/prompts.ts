@@ -92,7 +92,7 @@ export function prependLanguageDirective(
 
 /**
  * Get the block-action system prompt with language directive applied.
- * Used for all block actions: eli5, example, expand, ask, rewrite, AND inspire.
+ * Used for all block actions: eli5, example, expand, ask, rewrite.
  */
 export function getBlockActionSystemPrompt(lang: ResponseLanguage): string {
 	return prependLanguageDirective(BLOCK_ACTION_PROMPT, lang);
@@ -146,17 +146,6 @@ export function buildActionPrompt(
 			let result = `Text: "${trimmedBlock}"`;
 			if (context) result += `\n\nDocument context:\n${context}`;
 			result += `\n\nQuestion: ${trimmedPrompt}`;
-			return result;
-		}
-		case "inspire": {
-			const instruction = prompt?.trim() ?? "";
-			let result = `Text: "${trimmedBlock}"`;
-			if (context) {
-				result += `\n\nDocument context:\n${context}`;
-			}
-			result += `\n\nInstruction: ${instruction}`;
-			result +=
-				"\n\nProvide 2-5 related insights as bullet points. Each bullet starts with \"- \" and is 1-2 sentences. Start directly with the first bullet.";
 			return result;
 		}
 		default:

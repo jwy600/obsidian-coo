@@ -197,42 +197,4 @@ describe("buildActionPrompt", () => {
 		expect(result).toBe("Give one concrete example of this:\n\nhello");
 	});
 
-	it("inspire action with instruction includes bullet formatting", () => {
-		const result = buildActionPrompt(
-			"inspire",
-			sampleText,
-			"  explain from bayesian perspective  ",
-		);
-		expect(result).toContain('Text: "The quick brown fox"');
-		expect(result).toContain(
-			"Instruction: explain from bayesian perspective",
-		);
-		expect(result).toContain(
-			"Provide 2-5 related insights as bullet points",
-		);
-	});
-
-	it("inspire action without instruction uses empty string", () => {
-		const result = buildActionPrompt("inspire", sampleText);
-		expect(result).toContain("Instruction: ");
-		expect(result).toContain("bullet points");
-	});
-
-	it("inspire action includes document context when provided", () => {
-		const result = buildActionPrompt(
-			"inspire",
-			sampleText,
-			"explain this",
-			undefined,
-			"## My Section\nSome surrounding text",
-		);
-		expect(result).toContain("Document context:");
-		expect(result).toContain("## My Section");
-		expect(result).toContain("Some surrounding text");
-	});
-
-	it("inspire action omits context section when not provided", () => {
-		const result = buildActionPrompt("inspire", sampleText, "explain");
-		expect(result).not.toContain("Document context:");
-	});
 });
