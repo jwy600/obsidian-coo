@@ -32,10 +32,6 @@ Place your cursor in a paragraph that has annotations below it and run **coo: Re
 
 ![](https://github.com/jwy600/obsidian-coo/blob/d53575c11fe56e302f3c5348a8028cf9e651bb26/asset/rewrite.png)
 
-### Inspire
-
-Write an `{instruction}` anywhere in a paragraph — for example, `{give 3 examples}` — and run **coo: Inspire**. The AI generates 2–5 concise bullet points based on your instruction and appends them directly after the paragraph. If the paragraph is a list item, bullets are automatically nested. The `{instruction}` is removed from the text after expansion.
-
 ## Installation
 
 ### From release
