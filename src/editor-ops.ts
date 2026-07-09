@@ -16,6 +16,11 @@ interface MarkdownPrefix {
 	content: string;
 }
 
+interface CalloutBlock {
+	startLine: number;
+	endLine: number;
+}
+
 /**
  * Get the current editor selection with position info.
  * Returns null if nothing is selected.
@@ -34,11 +39,29 @@ export function getSelectedTextWithContext(
 }
 
 /**
- * Check if a line is an annotation line (%%...%%).
+ * Check if a line is a legacy %%...%% annotation line (kept as a paragraph
+ * boundary for notes created by older plugin versions).
  */
 function isAnnotationLine(line: string): boolean {
 	const trimmed = line.trim();
 	return trimmed.startsWith("%%") && trimmed.endsWith("%%");
+}
+
+/**
+ * Check if a line starts a coo note callout: "> [!coo]" (optionally with
+ * +/- and a title). Case-insensitive on the callout type.
+ */
+function isCalloutStart(line: string): boolean {
+	return /^>\s*\[!coo\]/i.test(line);
+}
+
+/**
+ * Check if a line is a Markdown heading (# .. ######). Headings are block
+ * boundaries — a paragraph never extends across a heading, even with no blank
+ * line between them.
+ */
+function isHeading(line: string): boolean {
+	return /^#{1,6}\s/.test(line);
 }
 
 /**
@@ -58,7 +81,8 @@ export function isListItem(line: string): boolean {
 
 /**
  * Find the paragraph bounds around a given line.
- * A paragraph is a contiguous block of non-empty, non-annotation lines.
+ * A paragraph is a contiguous block of non-empty lines, bounded by empty
+ * lines, headings, legacy %%...%% annotations, and coo callout starts.
  */
 export function findParagraphBounds(
 	editor: Editor,
@@ -67,27 +91,38 @@ export function findParagraphBounds(
 	const totalLines = editor.lineCount();
 	const currentLine = editor.getLine(lineNum);
 
-	if (isEmptyLine(currentLine) || isAnnotationLine(currentLine)) {
+	if (
+		isEmptyLine(currentLine) ||
+		isAnnotationLine(currentLine) ||
+		isCalloutStart(currentLine) ||
+		isHeading(currentLine)
+	) {
 		return null;
 	}
 
 	// List items are treated as individual paragraphs so that
-	// annotations attach to the specific item, not the entire list.
+	// notes attach to the specific item, not the entire list.
 	if (isListItem(currentLine)) {
 		return { startLine: lineNum, endLine: lineNum };
 	}
 
+	const isBoundary = (line: string): boolean =>
+		isEmptyLine(line) ||
+		isAnnotationLine(line) ||
+		isCalloutStart(line) ||
+		isHeading(line);
+
 	let startLine = lineNum;
 	while (startLine > 0) {
 		const prev = editor.getLine(startLine - 1);
-		if (isEmptyLine(prev) || isAnnotationLine(prev)) break;
+		if (isBoundary(prev)) break;
 		startLine--;
 	}
 
 	let endLine = lineNum;
 	while (endLine < totalLines - 1) {
 		const next = editor.getLine(endLine + 1);
-		if (isEmptyLine(next) || isAnnotationLine(next)) break;
+		if (isBoundary(next)) break;
 		endLine++;
 	}
 
@@ -158,93 +193,119 @@ export function extractMarkdownPrefix(text: string): MarkdownPrefix {
 }
 
 /**
- * The inner content of a single %%...%% annotation line (no comma splitting —
- * each annotation line is one note). Empty string if the annotation is empty.
+ * Strip the "> " (or ">") prefix from a callout body line.
  */
-function parseAnnotationContent(line: string): string {
-	const trimmed = line.trim();
-	const inner = trimmed.slice(2, -2).trim();
-	return inner;
+function stripCalloutBody(line: string): string {
+	if (line.startsWith("> ")) return line.slice(2);
+	if (line === ">") return "";
+	return line;
 }
 
 /**
- * Find all consecutive annotation lines below the paragraph.
- * Notes are a separate block, separated from the paragraph by a blank line,
- * so any blank line(s) between the paragraph and the notes are skipped first.
- * Each annotation line is one note (Ask answer). Returns their line numbers.
+ * Find all coo-note callout blocks below the paragraph. Notes are a separate
+ * block, separated from the paragraph by a blank line, so blank line(s) between
+ * the paragraph and the first callout (and between callouts) are skipped.
+ * Returns each callout's line range.
  */
-export function findAllAnnotationLines(
+export function findCalloutBlocks(
 	editor: Editor,
 	paragraphEndLine: number,
-): number[] {
+): CalloutBlock[] {
+	const blocks: CalloutBlock[] = [];
 	let i = paragraphEndLine + 1;
 	while (i < editor.lineCount() && isEmptyLine(editor.getLine(i))) {
 		i++;
 	}
-	const lines: number[] = [];
-	while (i < editor.lineCount() && isAnnotationLine(editor.getLine(i))) {
-		lines.push(i);
+	while (i < editor.lineCount()) {
+		if (!isCalloutStart(editor.getLine(i))) break;
+		const startLine = i;
 		i++;
+		// Consume the callout body (lines starting with ">").
+		while (i < editor.lineCount() && editor.getLine(i).startsWith(">")) {
+			i++;
+		}
+		blocks.push({ startLine, endLine: i - 1 });
+		// Skip blank lines between callouts.
+		while (i < editor.lineCount() && isEmptyLine(editor.getLine(i))) {
+			i++;
+		}
 	}
-	return lines;
+	return blocks;
 }
 
 /**
- * Get all annotation notes below a paragraph (one note per %%...%% line).
+ * Get the answer content of each note callout below the paragraph.
+ * The callout title (the question) is not included — only the body (answer).
  */
-export function getAnnotationNotes(
+export function getCalloutNotes(
 	editor: Editor,
 	paragraphEndLine: number,
 ): string[] {
-	const lineNums = findAllAnnotationLines(editor, paragraphEndLine);
+	const blocks = findCalloutBlocks(editor, paragraphEndLine);
 	const notes: string[] = [];
-	for (const lineNum of lineNums) {
-		const content = parseAnnotationContent(editor.getLine(lineNum));
+	for (const block of blocks) {
+		const lines: string[] = [];
+		for (let i = block.startLine + 1; i <= block.endLine; i++) {
+			lines.push(stripCalloutBody(editor.getLine(i)));
+		}
+		const content = lines.join("\n").trim();
 		if (content) notes.push(content);
 	}
 	return notes;
 }
 
 /**
- * Append a single note as a new %%...%% line below the paragraph, after any
- * existing annotation lines. The first note is separated from the paragraph by
- * a blank line so it renders as its own block (not inline with the paragraph);
- * subsequent notes stack directly under the previous one. Newlines in the note
- * are collapsed so the annotation stays on one line.
+ * Append a note as a new collapsed coo callout below the paragraph, after any
+ * existing note callouts. The question becomes the callout title; the answer
+ * (with its markdown intact) becomes the body. A blank line separates the
+ * callout block from the paragraph / previous callout so it renders as its own
+ * block.
  */
-export function appendAnnotation(
+export function appendCallout(
 	editor: Editor,
 	paragraphEndLine: number,
-	note: string,
+	title: string,
+	content: string,
 ): void {
-	const safe = note.replace(/\n+/g, " ").trim();
-	if (!safe) return;
+	const safeTitle = title.replace(/\n+/g, " ").trim() || "note";
+	const trimmedContent = content.trim();
+	if (!trimmedContent) return;
 
-	const existing = findAllAnnotationLines(editor, paragraphEndLine);
-	const insertAfterLine = existing[existing.length - 1] ?? paragraphEndLine;
+	const body = trimmedContent
+		.split("\n")
+		.map((l) => (l.trim() === "" ? ">" : `> ${l}`));
+	const blockText = [`> [!coo]- ${safeTitle}`, ...body].join("\n");
+
+	const existing = findCalloutBlocks(editor, paragraphEndLine);
+	const insertAfterLine =
+		existing.length > 0
+			? (existing[existing.length - 1]?.endLine ?? paragraphEndLine)
+			: paragraphEndLine;
 	const lineText = editor.getLine(insertAfterLine);
 	const insertPos = { line: insertAfterLine, ch: lineText.length };
-	// First note: blank line separator. Subsequent notes: stack directly.
-	const sep = existing.length > 0 ? "\n" : "\n\n";
-	editor.replaceRange(`${sep}%%${safe}%%`, insertPos);
+	editor.replaceRange(`\n\n${blockText}`, insertPos);
 }
 
 /**
- * Replace the paragraph (and any annotation lines below it) with new text.
- * Used by Rewrite: the rewritten paragraph replaces the original + notes.
+ * Replace the paragraph (and any note callouts below it) with new text.
+ * Used by Rewrite: the rewritten paragraph replaces the original + all its
+ * note callouts (and the blank separators between them).
  */
-export function replaceParagraphAndRemoveAnnotations(
+export function replaceParagraphAndRemoveCallouts(
 	editor: Editor,
 	startLine: number,
 	endLine: number,
-	annotationLines: number[],
+	calloutBlocks: CalloutBlock[],
 	newText: string,
 ): void {
-	const lastLine = annotationLines[annotationLines.length - 1] ?? endLine;
-	const lastLineText = editor.getLine(lastLine);
+	const lastBlockEnd =
+		calloutBlocks.length > 0
+			? (calloutBlocks[calloutBlocks.length - 1]?.endLine ?? endLine)
+			: endLine;
+	const lastLineText = editor.getLine(lastBlockEnd);
 
 	const from = { line: startLine, ch: 0 };
-	const to = { line: lastLine, ch: lastLineText.length };
+	const to = { line: lastBlockEnd, ch: lastLineText.length };
 
 	editor.replaceRange(newText, from, to);
 }

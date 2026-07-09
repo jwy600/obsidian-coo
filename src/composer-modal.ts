@@ -11,10 +11,10 @@ import {
 import {
 	getParagraphText,
 	extractMarkdownPrefix,
-	getAnnotationNotes,
-	findAllAnnotationLines,
-	appendAnnotation,
-	replaceParagraphAndRemoveAnnotations,
+	getCalloutNotes,
+	findCalloutBlocks,
+	appendCallout,
+	replaceParagraphAndRemoveCallouts,
 } from "./editor-ops";
 
 interface ParagraphBounds {
@@ -164,8 +164,9 @@ export class CooComposer extends Modal {
 				userPrompt,
 			});
 
-			// Answer writes straight into the note as a %%...%% note.
-			appendAnnotation(this.editor, this.bounds.endLine, result.text);
+			// Answer writes straight into the note as a collapsed callout
+			// (question as title, answer as body — markdown renders).
+			appendCallout(this.editor, this.bounds.endLine, question, result.text);
 
 			this.inputEl.value = "";
 			new Notice("Added note.", 2000);
@@ -179,7 +180,7 @@ export class CooComposer extends Modal {
 	}
 
 	private async handleRewrite(): Promise<void> {
-		const notes = getAnnotationNotes(this.editor, this.bounds.endLine);
+		const notes = getCalloutNotes(this.editor, this.bounds.endLine);
 		if (notes.length === 0) {
 			new Notice("No notes yet. Ask a question first.");
 			return;
@@ -209,15 +210,15 @@ export class CooComposer extends Modal {
 				webSearchEnabled: false,
 			});
 
-			const annotationLines = findAllAnnotationLines(
+			const calloutBlocks = findCalloutBlocks(
 				this.editor,
 				this.bounds.endLine,
 			);
-			replaceParagraphAndRemoveAnnotations(
+			replaceParagraphAndRemoveCallouts(
 				this.editor,
 				this.bounds.startLine,
 				this.bounds.endLine,
-				annotationLines,
+				calloutBlocks,
 				prefix + result.text,
 			);
 

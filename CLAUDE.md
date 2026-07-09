@@ -30,7 +30,7 @@ The original Coo web app (Next.js + React + Zustand + OpenAI). This plugin ports
 **What is Obsidian-specific:**
 
 - **Composer modal over the note** — the modal is a command bar (question input + Ask + Rewrite); all AI output writes straight into the note, not into the modal
-- **`%%...%%` notes** — Ask answers stored as Obsidian comments below the paragraph (visible in edit mode, invisible in reading mode), consumed by Rewrite
+- **Collapsed callout notes** — Ask answers stored as `[!coo]` Obsidian callouts below the paragraph (question as title, answer as body; markdown renders when expanded), consumed by Rewrite
 - **Inline Translate** — bracketed translation inserted right after the selection, per word/phrase
 - **Per-note chain storage** — the chain head (`response_id`) stored in a plugin-side JSON file keyed by note path
 
@@ -83,7 +83,7 @@ Output: `main.js` + `manifest.json` + `styles.css` at repo root (loaded by Obsid
 | `src/chain.ts` | Per-note chaining: `askChained()` (registers on first Ask, chains, retries on expired id), `reRegisterNote()`, `getChainHead`/`setChainHead`/`clearChain` (persisted in `chain-data.json`) |
 | `src/translate.ts` | `performTranslate()` — captures selection, calls Translate, inserts `(translation)` after the selection |
 | `src/composer-modal.ts` | Discuss modal: passage preview + question input + Ask + Rewrite. Ask writes `%%…%%` to the note (chained); Rewrite folds notes into the paragraph (one-shot) |
-| `src/editor-ops.ts` | `findParagraphBounds()`, `getParagraphText()`, `extractMarkdownPrefix()`, `%%…%%` CRUD (`findAllAnnotationLines`, `getAnnotationNotes`, `appendAnnotation`, `replaceParagraphAndRemoveAnnotations`), `insertTranslationAfter()` |
+| `src/editor-ops.ts` | `findParagraphBounds()`, `findSelectionSpan()`, `getParagraphText()`, `extractMarkdownPrefix()`, callout CRUD (`findCalloutBlocks`, `getCalloutNotes`, `appendCallout`, `replaceParagraphAndRemoveCallouts`), `insertTranslationAfter()` |
 | `manifest.json` | Plugin metadata (`obsidian-coo`) |
 | `styles.css` | Composer modal, Ask/Rewrite buttons, passage preview |
 
@@ -92,7 +92,7 @@ Output: `main.js` + `manifest.json` + `styles.css` at repo root (loaded by Obsid
 ### Discuss (`coo-discuss`)
 Select text in a paragraph → command palette or right-click → composer modal (passage preview + question input + Ask + Rewrite). **The modal is the command bar; the note is the canvas** — AI output writes into the note, not the modal.
 
-- **Ask** (selection-aware): the highlighted phrase is the focal point of the question. The answer is appended to the note as a `%%…%%` line below the paragraph. Asks **chain** via `previous_response_id` (the note is registered as the conversation root on the first Ask).
+- **Ask** (selection-aware): the highlighted phrase is the focal point of the question. The answer is appended to the note as a collapsed `[!coo]` callout below the paragraph (question as title, answer as body — markdown renders when expanded). Asks **chain** via `previous_response_id` (the note is registered as the conversation root on the first Ask).
 - **Rewrite**: folds the `%%…%%` notes into the paragraph and removes them. One-shot — does not chain.
 - Undo everywhere is native Ctrl+Z (each action is one editor op).
 
@@ -111,20 +111,25 @@ Each note has a conversation root. On the first Ask, the whole note is sent to O
 - **Re-register note** captures a fresh snapshot and resets the chain (prior Q&A context drops).
 - The registered snapshot is a point-in-time copy of the note. The passage you Ask about is always sent fresh; the broad note context can drift if you edit heavily (that's what re-register is for).
 
-## Annotation format
+## Note format
 
-Each Ask answer is stored as its own `%%…%%` line (Obsidian comment) below the paragraph — visible in edit mode, invisible in reading mode:
+Each Ask answer is stored as a collapsed Obsidian callout below the paragraph — the question is the callout title (visible collapsed as `▶ What is X?`), the answer is the body (markdown renders when expanded):
 
 ```markdown
 Some paragraph text that the user discussed with AI.
-%%First answer.%%
-%%Second answer.%%
+
+> [!coo]- What is X?
+> The answer, with **markdown** that renders.
+
+> [!coo]- Why Y?
+> Another answer.
 ```
 
-- `appendAnnotation()` adds a new `%%…%%` line below the paragraph (newlines collapsed to one line).
-- `getAnnotationNotes()` reads all consecutive `%%…%%` lines below a paragraph (one note per line — no comma splitting).
-- `replaceParagraphAndRemoveAnnotations()` consumes them during Rewrite.
-- Legacy comma-separated `%%a, b, c%%` annotations (from older plugin versions) are read as a single note — still consumed by Rewrite.
+- `appendCallout()` adds a new `[!coo]` callout below the paragraph (blank-line separated; question as title, answer as body with markdown intact).
+- `getCalloutNotes()` reads the body (answer) of each callout below a paragraph (skips the title).
+- `replaceParagraphAndRemoveCallouts()` consumes them during Rewrite (removes the callout blocks).
+- Styled via `.callout[data-callout="coo"]` in `styles.css`.
+- Legacy `%%…%%` annotations (older plugin versions) are treated as paragraph boundaries but are no longer read by Rewrite — re-ask to regenerate them as callouts.
 
 ## Settings
 

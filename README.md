@@ -8,10 +8,10 @@ coo makes AI contextual in Obsidian. Instead of treating LLMs as a separate plac
 
 Select text in a paragraph and open the **Discuss** composer (command palette or right-click → *coo discuss*). A small composer opens over your note with the paragraph as context.
 
-- **Ask** — type a question about the paragraph (your highlighted phrase is the focal point). The answer is saved as an invisible `%%note%%` below the paragraph. Follow-up questions **chain**: coo remembers the whole Q&A for the note, so each question builds on the last.
+- **Ask** — type a question about the paragraph (your highlighted phrase is the focal point). The answer is saved as a collapsed callout below the paragraph — the question becomes the title, the answer (with its markdown) becomes the body. Follow-up questions **chain**: coo remembers the whole Q&A for the note, so each question builds on the last.
 - **Rewrite** — fold the gathered notes back into the paragraph. coo rewrites the paragraph incorporating the notes, then removes them. Fully undoable with Ctrl/Cmd+Z.
 
-Answers and rewrites write straight into your note — the composer is just the command bar. Notes are `%%…%%` Obsidian comments: visible while you edit, invisible in reading mode.
+Answers and rewrites write straight into your note — the composer is just the command bar. Notes are `[!coo]` callouts: collapsed by default (only the question shows), expand to read the formatted answer.
 
 ### Translate
 

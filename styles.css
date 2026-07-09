@@ -1,5 +1,12 @@
 /* Coo Plugin Styles */
 
+/* ---- coo note callout (Ask answers) ---- */
+/* Collapsed by default in the note ("> [!coo]- ..."); renders markdown inside. */
+.callout[data-callout="coo"] {
+	--callout-color: 124, 77, 255;
+	--callout-icon: message-square;
+}
+
 /* ---- Composer modal — translucent backdrop, pinned to bottom ---- */
 
 .modal-container:has(.coo-composer-modal) .modal-bg {

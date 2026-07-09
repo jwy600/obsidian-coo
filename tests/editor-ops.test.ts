@@ -5,10 +5,10 @@ import {
 	findSelectionSpan,
 	extractMarkdownPrefix,
 	getParagraphText,
-	findAllAnnotationLines,
-	getAnnotationNotes,
-	appendAnnotation,
-	replaceParagraphAndRemoveAnnotations,
+	findCalloutBlocks,
+	getCalloutNotes,
+	appendCallout,
+	replaceParagraphAndRemoveCallouts,
 	insertTranslationAfter,
 } from "../src/editor-ops";
 
@@ -123,6 +123,31 @@ describe("findParagraphBounds", () => {
 			endLine: 1,
 		});
 	});
+
+	it("stops at a heading immediately after the paragraph (no blank line)", () => {
+		const editor = new MockEditor({
+			lines: ["Para text", "### Next heading", "content"],
+		});
+		expect(findParagraphBounds(asEditor(editor), 0)).toEqual({
+			startLine: 0,
+			endLine: 0,
+		});
+	});
+
+	it("stops at a heading immediately before the paragraph", () => {
+		const editor = new MockEditor({
+			lines: ["### Heading", "Para text"],
+		});
+		expect(findParagraphBounds(asEditor(editor), 1)).toEqual({
+			startLine: 1,
+			endLine: 1,
+		});
+	});
+
+	it("returns null for a heading line", () => {
+		const editor = new MockEditor({ lines: ["## Heading"] });
+		expect(findParagraphBounds(asEditor(editor), 0)).toBeNull();
+	});
 });
 
 describe("findSelectionSpan", () => {
@@ -180,115 +205,186 @@ describe("getParagraphText", () => {
 	});
 });
 
-describe("findAllAnnotationLines", () => {
-	it("finds consecutive annotation lines", () => {
-		const editor = new MockEditor({ lines: ["P", "%%a%%", "%%b%%", "next"] });
-		expect(findAllAnnotationLines(asEditor(editor), 0)).toEqual([1, 2]);
+describe("findCalloutBlocks", () => {
+	it("finds a callout block below the paragraph", () => {
+		const editor = new MockEditor({
+			lines: ["P", "", "> [!coo]- Q?", "> answer"],
+		});
+		expect(findCalloutBlocks(asEditor(editor), 0)).toEqual([
+			{ startLine: 2, endLine: 3 },
+		]);
 	});
 
-	it("returns empty when no annotations", () => {
-		const editor = new MockEditor({ lines: ["P", "next"] });
-		expect(findAllAnnotationLines(asEditor(editor), 0)).toEqual([]);
+	it("finds multiple callout blocks", () => {
+		const editor = new MockEditor({
+			lines: [
+				"P",
+				"",
+				"> [!coo]- Q1?",
+				"> a1",
+				"",
+				"> [!coo]- Q2?",
+				"> a2",
+			],
+		});
+		expect(findCalloutBlocks(asEditor(editor), 0)).toEqual([
+			{ startLine: 2, endLine: 3 },
+			{ startLine: 5, endLine: 6 },
+		]);
 	});
 
-	it("stops at an empty line", () => {
-		const editor = new MockEditor({ lines: ["P", "%%a%%", "", "%%b%%"] });
-		expect(findAllAnnotationLines(asEditor(editor), 0)).toEqual([1]);
+	it("returns empty when there are no callouts", () => {
+		const editor = new MockEditor({ lines: ["P", "", "next"] });
+		expect(findCalloutBlocks(asEditor(editor), 0)).toEqual([]);
 	});
 
-	it("skips a blank line separator to find the notes block", () => {
-		const editor = new MockEditor({ lines: ["P", "", "%%a%%", "%%b%%"] });
-		expect(findAllAnnotationLines(asEditor(editor), 0)).toEqual([2, 3]);
+	it("stops at non-callout content after a blank", () => {
+		const editor = new MockEditor({
+			lines: ["P", "", "> [!coo]- Q?", "> a", "", "next"],
+		});
+		expect(findCalloutBlocks(asEditor(editor), 0)).toEqual([
+			{ startLine: 2, endLine: 3 },
+		]);
 	});
 
-	it("returns empty when a blank line leads to non-annotation content", () => {
-		const editor = new MockEditor({ lines: ["P", "", "next paragraph"] });
-		expect(findAllAnnotationLines(asEditor(editor), 0)).toEqual([]);
+	it("ignores non-coo callouts", () => {
+		const editor = new MockEditor({
+			lines: ["P", "", "> [!note]- other", "> x"],
+		});
+		expect(findCalloutBlocks(asEditor(editor), 0)).toEqual([]);
 	});
 });
 
-describe("getAnnotationNotes", () => {
-	it("returns all notes below the paragraph", () => {
-		const editor = new MockEditor({ lines: ["P", "%%a%%", "%%b%%"] });
-		expect(getAnnotationNotes(asEditor(editor), 0)).toEqual(["a", "b"]);
+describe("getCalloutNotes", () => {
+	it("returns the body (answer) of each callout, skipping the title", () => {
+		const editor = new MockEditor({
+			lines: ["P", "", "> [!coo]- What is X?", "> The answer with **markdown**."],
+		});
+		expect(getCalloutNotes(asEditor(editor), 0)).toEqual([
+			"The answer with **markdown**.",
+		]);
 	});
 
-	it("returns empty when no annotations", () => {
+	it("joins multi-line bodies", () => {
+		const editor = new MockEditor({
+			lines: ["P", "", "> [!coo]- Q?", "> line one.", "> line two."],
+		});
+		expect(getCalloutNotes(asEditor(editor), 0)).toEqual([
+			"line one.\nline two.",
+		]);
+	});
+
+	it("returns empty when there are no callouts", () => {
 		const editor = new MockEditor({ lines: ["P"] });
-		expect(getAnnotationNotes(asEditor(editor), 0)).toEqual([]);
+		expect(getCalloutNotes(asEditor(editor), 0)).toEqual([]);
 	});
 
-	it("skips empty annotation lines", () => {
-		const editor = new MockEditor({ lines: ["P", "%%%%", "%%real%%"] });
-		expect(getAnnotationNotes(asEditor(editor), 0)).toEqual(["real"]);
-	});
-
-	it("returns one note for a legacy comma-separated annotation", () => {
-		const editor = new MockEditor({ lines: ["P", "%%a, b, c%%"] });
-		expect(getAnnotationNotes(asEditor(editor), 0)).toEqual(["a, b, c"]);
-	});
-
-	it("finds notes separated from the paragraph by a blank line", () => {
-		const editor = new MockEditor({ lines: ["P", "", "%%a%%", "%%b%%"] });
-		expect(getAnnotationNotes(asEditor(editor), 0)).toEqual(["a", "b"]);
+	it("skips empty bodies", () => {
+		const editor = new MockEditor({
+			lines: ["P", "", "> [!coo]- Q?", ">"],
+		});
+		expect(getCalloutNotes(asEditor(editor), 0)).toEqual([]);
 	});
 });
 
-describe("appendAnnotation", () => {
-	it("separates the first note from the paragraph with a blank line", () => {
+describe("appendCallout", () => {
+	it("appends a collapsed callout with a blank-line separator", () => {
 		const editor = new MockEditor({ lines: ["Paragraph text"] });
-		appendAnnotation(asEditor(editor), 0, "a note");
-		expect(editor.lines).toEqual(["Paragraph text", "", "%%a note%%"]);
+		appendCallout(asEditor(editor), 0, "What is X?", "The answer.");
+		expect(editor.lines).toEqual([
+			"Paragraph text",
+			"",
+			"> [!coo]- What is X?",
+			"> The answer.",
+		]);
 	});
 
-	it("stacks a second note directly under the first", () => {
-		const editor = new MockEditor({ lines: ["P", "", "%%first%%"] });
-		appendAnnotation(asEditor(editor), 0, "second");
-		expect(editor.lines).toEqual(["P", "", "%%first%%", "%%second%%"]);
+	it("appends a second callout after the first", () => {
+		const editor = new MockEditor({
+			lines: ["P", "", "> [!coo]- Q1?", "> a1"],
+		});
+		appendCallout(asEditor(editor), 0, "Q2?", "a2");
+		expect(editor.lines).toEqual([
+			"P",
+			"",
+			"> [!coo]- Q1?",
+			"> a1",
+			"",
+			"> [!coo]- Q2?",
+			"> a2",
+		]);
 	});
 
-	it("appends after legacy immediate annotations (no blank line)", () => {
-		const editor = new MockEditor({ lines: ["P", "%%first%%"] });
-		appendAnnotation(asEditor(editor), 0, "second");
-		expect(editor.lines).toEqual(["P", "%%first%%", "%%second%%"]);
-	});
-
-	it("collapses newlines in the note", () => {
+	it("preserves multi-line content as callout body", () => {
 		const editor = new MockEditor({ lines: ["P"] });
-		appendAnnotation(asEditor(editor), 0, "line1\nline2");
-		expect(editor.lines).toEqual(["P", "", "%%line1 line2%%"]);
+		appendCallout(asEditor(editor), 0, "Q?", "line one.\nline two.");
+		expect(editor.lines).toEqual([
+			"P",
+			"",
+			"> [!coo]- Q?",
+			"> line one.",
+			"> line two.",
+		]);
 	});
 
-	it("ignores an empty note", () => {
+	it("collapses newlines in the title", () => {
 		const editor = new MockEditor({ lines: ["P"] });
-		appendAnnotation(asEditor(editor), 0, "   ");
+		appendCallout(asEditor(editor), 0, "multi\nline question", "a");
+		expect(editor.lines[2]).toBe("> [!coo]- multi line question");
+	});
+
+	it("ignores a whitespace-only answer", () => {
+		const editor = new MockEditor({ lines: ["P"] });
+		appendCallout(asEditor(editor), 0, "Q?", "   ");
 		expect(editor.lines).toEqual(["P"]);
 	});
 });
 
-describe("replaceParagraphAndRemoveAnnotations", () => {
-	it("replaces paragraph and removes annotation lines", () => {
-		const editor = new MockEditor({ lines: ["P", "%%a%%", "%%b%%"] });
-		replaceParagraphAndRemoveAnnotations(asEditor(editor), 0, 0, [1, 2], "rewritten");
-		expect(editor.lines).toEqual(["rewritten"]);
+describe("replaceParagraphAndRemoveCallouts", () => {
+	it("replaces the paragraph and removes the callout block", () => {
+		const editor = new MockEditor({
+			lines: ["P", "", "> [!coo]- Q?", "> a", "after"],
+		});
+		replaceParagraphAndRemoveCallouts(
+			asEditor(editor),
+			0,
+			0,
+			[{ startLine: 2, endLine: 3 }],
+			"rewritten",
+		);
+		expect(editor.lines).toEqual(["rewritten", "after"]);
 	});
 
-	it("replaces only the paragraph when no annotations", () => {
+	it("removes the paragraph, blank separator, and multiple callouts", () => {
+		const editor = new MockEditor({
+			lines: [
+				"P",
+				"",
+				"> [!coo]- Q1?",
+				"> a1",
+				"",
+				"> [!coo]- Q2?",
+				"> a2",
+				"after",
+			],
+		});
+		replaceParagraphAndRemoveCallouts(
+			asEditor(editor),
+			0,
+			0,
+			[
+				{ startLine: 2, endLine: 3 },
+				{ startLine: 5, endLine: 6 },
+			],
+			"new",
+		);
+		expect(editor.lines).toEqual(["new", "after"]);
+	});
+
+	it("replaces only the paragraph when there are no callouts", () => {
 		const editor = new MockEditor({ lines: ["P", "next"] });
-		replaceParagraphAndRemoveAnnotations(asEditor(editor), 0, 0, [], "rewritten");
+		replaceParagraphAndRemoveCallouts(asEditor(editor), 0, 0, [], "rewritten");
 		expect(editor.lines).toEqual(["rewritten", "next"]);
-	});
-
-	it("replaces a multi-line paragraph and its annotations", () => {
-		const editor = new MockEditor({ lines: ["L1", "L2", "%%a%%", "after"] });
-		replaceParagraphAndRemoveAnnotations(asEditor(editor), 0, 1, [2], "new");
-		expect(editor.lines).toEqual(["new", "after"]);
-	});
-
-	it("removes the paragraph, blank separator, and annotations together", () => {
-		const editor = new MockEditor({ lines: ["P", "", "%%a%%", "after"] });
-		replaceParagraphAndRemoveAnnotations(asEditor(editor), 0, 0, [2], "new");
-		expect(editor.lines).toEqual(["new", "after"]);
 	});
 });
 
