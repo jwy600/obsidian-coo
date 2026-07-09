@@ -2,176 +2,73 @@ import { Editor, Notice, Plugin } from "obsidian";
 import type { CooSettings } from "./types";
 import { DEFAULT_SETTINGS, CooSettingTab } from "./settings";
 import { detectObsidianLocale } from "./settings-utils";
-import { QueryModal } from "./query-modal";
 import { CooComposer } from "./composer-modal";
-import { chatCompletion } from "./ai-client";
-import { getBlockActionSystemPrompt, buildActionPrompt } from "./prompts";
-import {
-	migratePromptFolders,
-	ensureDefaultPrompts,
-	loadDeveloperPrompt,
-	migratePromptFilename,
-} from "./prompt-loader";
-import {
-	getSelectedTextWithContext,
-	findParagraphBoundsNear,
-	getParagraphText,
-	extractMarkdownPrefix,
-	findAnnotationLine,
-	parseAnnotations,
-	replaceParagraphAndRemoveAnnotations,
-} from "./editor-ops";
+import { performTranslate } from "./translate";
+import { reRegisterNote } from "./chain";
+import { getSelectedTextWithContext, findSelectionSpan } from "./editor-ops";
 
 export default class CooPlugin extends Plugin {
 	settings: CooSettings;
-	developerPrompt: string;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
-		await migratePromptFolders(this.app, this.manifest.dir ?? "");
-		await ensureDefaultPrompts(this.app, this.manifest.dir ?? "");
-		const result = await loadDeveloperPrompt(
-			this.app,
-			this.manifest.dir ?? "",
-			this.settings.responseLanguage,
-			this.settings.systemPromptFile,
-		);
-		this.developerPrompt = result.content;
-		if (result.usedFallback) {
-			new Notice(
-				`System prompt file "${this.settings.systemPromptFile}" not found or empty. Using default prompt.`,
-				5000,
-			);
-		}
+		await this.cleanupLegacyPrompts();
 
-		// --- Flow A: Ask ---
-		this.addCommand({
-			id: "coo-ask",
-			name: "ask",
-			callback: () => {
-				if (!this.requireApiKey()) return;
-				new QueryModal(
-					this.app,
-					this.settings,
-					this.developerPrompt,
-				).open();
-			},
-		});
-
-		// --- Flow B: Discuss ---
+		// --- Discuss: select a paragraph → composer (Ask + Rewrite) ---
 		this.addCommand({
 			id: "coo-discuss",
+			// eslint-disable-next-line obsidianmd/ui/sentence-case -- command name
 			name: "discuss",
 			editorCallback: (editor: Editor) => {
 				this.openDiscuss(editor);
 			},
 		});
 
-		// --- Flow C: Rewrite ---
+		// --- Translate: select a word/phrase → inline bracketed translation ---
 		this.addCommand({
-			id: "coo-rewrite",
-			name: "rewrite",
+			id: "coo-translate",
+			// eslint-disable-next-line obsidianmd/ui/sentence-case -- command name
+			name: "translate",
+			editorCallback: (editor: Editor) => {
+				void performTranslate(editor, this.settings);
+			},
+		});
+
+		// --- Re-register note: refresh the chaining snapshot ---
+		this.addCommand({
+			id: "coo-re-register",
+			// eslint-disable-next-line obsidianmd/ui/sentence-case -- command name
+			name: "re-register note",
 			editorCallback: async (editor: Editor) => {
-				if (!this.requireApiKey()) return;
-
-				const cursor = editor.getCursor();
-				const bounds = findParagraphBoundsNear(editor, cursor.line);
-				if (!bounds) {
-					new Notice("Place your cursor in a paragraph.");
-					return;
-				}
-
-				const annotationLineNum = findAnnotationLine(
-					editor,
-					bounds.endLine,
-				);
-				if (annotationLineNum === null) {
-					new Notice(
-						"No annotations found. Use coo discuss to add annotations first.",
-					);
-					return;
-				}
-
-				const annotationLine = editor.getLine(annotationLineNum);
-				const annotations = parseAnnotations(annotationLine);
-
-				if (annotations.length === 0) {
-					new Notice("Annotation line is empty.");
-					return;
-				}
-
-				await this.performRewrite(
-					editor,
-					bounds,
-					annotationLineNum,
-					annotations,
-				);
+				await this.reRegister(editor);
 			},
 		});
 
 		// --- Context menu ---
 		this.registerEvent(
 			this.app.workspace.on("editor-menu", (menu, editor) => {
-				// Discuss: show when text is selected
-				if (editor.somethingSelected()) {
-					menu.addItem((item) => {
-						item.setTitle("coo discuss")
-							.setIcon("messages-square")
-							.onClick(() => {
-								this.openDiscuss(editor);
-							});
-					});
-				}
-
-				const cursor = editor.getCursor();
-				const bounds = findParagraphBoundsNear(editor, cursor.line);
-				if (!bounds) return;
-
-				// Rewrite: show when paragraph has annotations
-				const annotationLineNum = findAnnotationLine(
-					editor,
-					bounds.endLine,
-				);
-				if (annotationLineNum !== null) {
-					const annotationLine = editor.getLine(annotationLineNum);
-					const annotations = parseAnnotations(annotationLine);
-					if (annotations.length > 0) {
-						menu.addItem((item) => {
-							item.setTitle("coo rewrite")
-								.setIcon("pencil")
-								.onClick(async () => {
-									if (!this.requireApiKey()) return;
-									await this.performRewrite(
-										editor,
-										bounds,
-										annotationLineNum,
-										annotations,
-									);
-								});
+				if (!editor.somethingSelected()) return;
+				menu.addItem((item) => {
+					// eslint-disable-next-line obsidianmd/ui/sentence-case -- brand label
+					item.setTitle("coo discuss")
+						.setIcon("messages-square")
+						.onClick(() => {
+							this.openDiscuss(editor);
 						});
-					}
-				}
+				});
+				menu.addItem((item) => {
+					// eslint-disable-next-line obsidianmd/ui/sentence-case -- brand label
+					item.setTitle("coo translate")
+						.setIcon("languages")
+						.onClick(() => {
+							void performTranslate(editor, this.settings);
+						});
+				});
 			}),
 		);
 
 		// Settings tab
 		this.addSettingTab(new CooSettingTab(this.app, this));
-	}
-
-	async reloadDeveloperPrompt(): Promise<void> {
-		const result = await loadDeveloperPrompt(
-			this.app,
-			this.manifest.dir ?? "",
-			this.settings.responseLanguage,
-			this.settings.systemPromptFile,
-		);
-		this.developerPrompt = result.content;
-		if (result.usedFallback) {
-			new Notice(
-				`System prompt file "${this.settings.systemPromptFile}" not found or empty. Using default prompt.`,
-				5000,
-			);
-		}
 	}
 
 	async loadSettings(): Promise<void> {
@@ -185,18 +82,10 @@ export default class CooPlugin extends Plugin {
 
 		// Auto-detect locale on first use (no saved settings)
 		if (isFirstUse) {
-			const detectedLang = detectObsidianLocale();
 			this.settings = {
 				...this.settings,
-				responseLanguage: detectedLang,
+				responseLanguage: detectObsidianLocale(),
 			};
-		}
-
-		// Migrate old prompt filenames
-		const migrated = migratePromptFilename(this.settings.systemPromptFile);
-		if (migrated !== this.settings.systemPromptFile) {
-			this.settings = { ...this.settings, systemPromptFile: migrated };
-			await this.saveSettings();
 		}
 	}
 
@@ -213,58 +102,75 @@ export default class CooPlugin extends Plugin {
 			return;
 		}
 
+		const bounds = findSelectionSpan(editor, ctx.from, ctx.to);
+		if (!bounds) {
+			new Notice("Select text in a paragraph.");
+			return;
+		}
+
+		const file = this.app.workspace.getActiveFile();
+		if (!file) {
+			new Notice("Open a note first.");
+			return;
+		}
+
 		new CooComposer(
 			this.app,
 			this.settings,
-			ctx.selectedText,
 			editor,
-			ctx.from,
+			this.manifest.dir ?? "",
+			file.path,
+			ctx.selectedText,
+			bounds,
 		).open();
 	}
 
-	private async performRewrite(
-		editor: Editor,
-		bounds: { startLine: number; endLine: number },
-		annotationLineNum: number,
-		annotations: string[],
-	): Promise<void> {
-		const paragraphText = getParagraphText(
-			editor,
-			bounds.startLine,
-			bounds.endLine,
-		);
-		const { prefix, content } = extractMarkdownPrefix(paragraphText);
+	private async reRegister(editor: Editor): Promise<void> {
+		if (!this.requireApiKey()) return;
 
-		new Notice("Rewriting...");
+		const file = this.app.workspace.getActiveFile();
+		if (!file) {
+			new Notice("Open a note first.");
+			return;
+		}
+
+		new Notice("Re-registering note...");
 
 		try {
-			const userPrompt = buildActionPrompt(
-				"rewrite",
-				content,
-				annotations.join(", "),
+			await reRegisterNote(
+				this.app,
+				this.manifest.dir ?? "",
+				file.path,
+				editor.getValue(),
+				this.settings,
 			);
-
-			const rewritten = await chatCompletion({
-				settings: this.settings,
-				systemPrompt: getBlockActionSystemPrompt(
-					this.settings.responseLanguage,
-				),
-				userPrompt,
-			});
-
-			replaceParagraphAndRemoveAnnotations(
-				editor,
-				bounds.startLine,
-				bounds.endLine,
-				annotationLineNum,
-				prefix + rewritten,
-			);
-
-			new Notice("Rewritten.");
+			new Notice("Note re-registered.");
 		} catch (err) {
 			const message =
-				err instanceof Error ? err.message : "Rewrite failed.";
+				err instanceof Error
+					? err.message
+					: "Re-registration failed.";
 			new Notice(message, 5000);
+		}
+	}
+
+	/**
+	 * Remove the default prompt files left by the legacy prompt-loader (Flow A
+	 * is gone). User-added custom files in prompts/ are left untouched.
+	 */
+	private async cleanupLegacyPrompts(): Promise<void> {
+		const dir = this.manifest.dir ?? "";
+		if (!dir) return;
+		const adapter = this.app.vault.adapter;
+		for (const name of ["knowledgeassistant.md", "atomic.md"]) {
+			const path = `${dir}/prompts/${name}`;
+			if (await adapter.exists(path)) {
+				try {
+					await adapter.remove(path);
+				} catch {
+					// best-effort; ignore
+				}
+			}
 		}
 	}
 

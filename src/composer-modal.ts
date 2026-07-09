@@ -1,272 +1,233 @@
 import { App, Editor, Modal, Notice } from "obsidian";
-import type { BlockAction, CooSettings } from "./types";
+import type { CooSettings } from "./types";
 import { chatCompletion } from "./ai-client";
+import { askChained } from "./chain";
 import {
 	getBlockActionSystemPrompt,
-	getTranslateSystemPrompt,
-	buildActionPrompt,
+	getRewriteSystemPrompt,
+	buildAskInput,
+	buildRewriteInput,
 } from "./prompts";
 import {
-	findParagraphBounds,
-	appendAnnotations,
-	gatherSurroundingContext,
+	getParagraphText,
+	extractMarkdownPrefix,
+	getAnnotationNotes,
+	findAllAnnotationLines,
+	appendAnnotation,
+	replaceParagraphAndRemoveAnnotations,
 } from "./editor-ops";
 
+interface ParagraphBounds {
+	startLine: number;
+	endLine: number;
+}
+
+/**
+ * "Coo: Discuss" — a composer modal over a selected paragraph.
+ *
+ * The modal is the command bar; the note is the canvas. Ask answers and
+ * rewrites write straight into the note (not into this modal):
+ *   - Ask   → answer appended as a %%...%% note under the paragraph (chains)
+ *   - Rewrite → paragraph rewritten in place, notes removed (one-shot)
+ * Undo everywhere is native Ctrl+Z.
+ */
 export class CooComposer extends Modal {
 	private settings: CooSettings;
-	private selectedText: string;
 	private editor: Editor;
-	// UI elements
-	private composerBox: HTMLDivElement;
-	private contentArea: HTMLDivElement;
-	private askBtn: HTMLButtonElement;
-	private inputToolbar: HTMLDivElement;
+	private pluginDir: string;
+	private notePath: string;
+	private selectedText: string;
+	private bounds: ParagraphBounds;
 
-	// State
-	private paragraphEndLine: number;
-	private surroundingContext: string;
+	private inputEl: HTMLTextAreaElement;
+	private askBtn: HTMLButtonElement;
+	private rewriteBtn: HTMLButtonElement;
+	private toolbar: HTMLDivElement;
 
 	constructor(
 		app: App,
 		settings: CooSettings,
-		selectedText: string,
 		editor: Editor,
-		selectionFrom: { line: number; ch: number },
+		pluginDir: string,
+		notePath: string,
+		selectedText: string,
+		bounds: ParagraphBounds,
 	) {
 		super(app);
 		this.settings = settings;
-		this.selectedText = selectedText;
 		this.editor = editor;
-
-		// Determine paragraph bounds for appending annotations and gathering context
-		const bounds = findParagraphBounds(editor, selectionFrom.line);
-		this.paragraphEndLine = bounds ? bounds.endLine : selectionFrom.line;
-		this.surroundingContext = bounds
-			? gatherSurroundingContext(editor, bounds.startLine, bounds.endLine)
-			: "";
+		this.pluginDir = pluginDir;
+		this.notePath = notePath;
+		this.selectedText = selectedText;
+		this.bounds = bounds;
 	}
 
 	onOpen(): void {
 		const { contentEl } = this;
 		contentEl.addClass("coo-composer-modal");
 
-		// Position modal centered over the content area (ignoring sidebars)
-		this.alignToContentArea();
-
+		// eslint-disable-next-line obsidianmd/ui/sentence-case -- brand label
 		contentEl.createEl("h3", { text: "coo discuss" });
 
-		// Selected text preview
+		// Passage preview (the paragraph under discussion)
 		const preview = contentEl.createDiv({ cls: "coo-selection-preview" });
+		const passage = getParagraphText(
+			this.editor,
+			this.bounds.startLine,
+			this.bounds.endLine,
+		);
 		preview.setText(
-			this.selectedText.length > 200
-				? this.selectedText.slice(0, 200) + "..."
-				: this.selectedText,
+			passage.length > 300 ? passage.slice(0, 300) + "..." : passage,
 		);
 
-		// Composer box: content area + toolbar
-		this.composerBox = contentEl.createDiv({ cls: "coo-input-area" });
-
-		// Single contenteditable div for both input and response
-		this.contentArea = this.composerBox.createDiv({
-			cls: "coo-content-area",
-			attr: { contenteditable: "true" },
+		// Question input
+		this.inputEl = contentEl.createEl("textarea", {
+			attr: { placeholder: "Ask a question about this paragraph...", rows: "2" },
 		});
+		this.inputEl.addClass("coo-composer-input");
 
-		this.contentArea.addEventListener("keydown", (e: KeyboardEvent) => {
+		this.inputEl.addEventListener("keydown", (e: KeyboardEvent) => {
+			// Ignore Enter while an IME is composing (e.g. CJK input methods use
+			// Enter to confirm the candidate selection, not to submit).
+			if (e.isComposing) return;
 			if (e.key === "Enter" && !e.shiftKey) {
 				e.preventDefault();
 				void this.handleAsk();
 			}
 		});
 
-		// Remove leftover highlight spans when content is cleared.
-		// Without this, Ctrl+A → Backspace leaves empty <span class="coo-picked">
-		// nodes in the DOM, causing newly typed text to inherit highlight styles.
-		this.contentArea.addEventListener("input", () => {
-			if (!this.contentArea.textContent?.trim()) {
-				this.contentArea.innerHTML = "";
-			}
+		// Toolbar: Rewrite (left) + Ask (right)
+		this.toolbar = contentEl.createDiv({ cls: "coo-input-toolbar" });
+
+		this.rewriteBtn = this.toolbar.createEl("button", { text: "Rewrite" });
+		this.rewriteBtn.addClass("coo-rewrite-btn");
+		this.rewriteBtn.addEventListener("click", () => {
+			void this.handleRewrite();
 		});
 
-		// Phrase picking: drag-select text in the response area to add annotations
-		this.contentArea.addEventListener("mouseup", () => {
-			const selection = window.getSelection();
-			if (!selection || selection.isCollapsed) return;
-
-			const selectedText = selection.toString().trim();
-			if (!selectedText) return;
-
-			// Check the selection is within our content area
-			const range = selection.getRangeAt(0);
-			if (!this.contentArea.contains(range.commonAncestorContainer))
-				return;
-
-			// Wrap selected text in a highlight span
-			try {
-				const span = document.createElement("span");
-				span.className = "coo-picked";
-				range.surroundContents(span);
-			} catch {
-				// surroundContents can fail if selection crosses element boundaries.
-				// In that case, still add the annotation but skip visual highlighting.
-			}
-
-			selection.removeAllRanges();
-
-			// Immediately append to annotations in the editor
-			appendAnnotations(this.editor, this.paragraphEndLine, [
-				selectedText,
-			]);
-			new Notice(`Added: ${selectedText}`, 2000);
-		});
-
-		// Toolbar: quick actions (left) + ask button (right)
-		this.inputToolbar = this.composerBox.createDiv({
-			cls: "coo-input-toolbar",
-		});
-
-		const actionsGroup = this.inputToolbar.createDiv({
-			cls: "coo-action-bar",
-		});
-		const actions: Array<{ label: string; action: BlockAction }> = [
-			{ label: "Translate", action: "translate" },
-			{ label: "Example", action: "example" },
-			{ label: "Expand", action: "expand" },
-			{ label: "ELI5", action: "eli5" },
-		];
-		for (const { label, action } of actions) {
-			const btn = actionsGroup.createEl("button", { text: label });
-			btn.addEventListener("click", () => {
-				void this.handleQuickAction(action);
-			});
-		}
-
-		this.askBtn = this.inputToolbar.createEl("button", { text: "Ask" });
+		this.askBtn = this.toolbar.createEl("button", { text: "Ask" });
 		this.askBtn.addClass("coo-ask-btn");
 		this.askBtn.addEventListener("click", () => {
 			void this.handleAsk();
 		});
 
-		setTimeout(() => this.contentArea.focus(), 50);
+		setTimeout(() => this.inputEl.focus(), 50);
 	}
 
 	onClose(): void {
 		this.contentEl.empty();
 	}
 
-	private alignToContentArea(): void {
-		const rootSplit = document.querySelector(".workspace-split.mod-root");
-		if (!rootSplit) return;
-
-		const rect = rootSplit.getBoundingClientRect();
-		const modalEl = this.containerEl.querySelector(
-			".modal",
-		) as HTMLElement | null;
-		if (!modalEl) return;
-
-		// Center the modal within the content area bounds
-		const maxWidth = Math.min(700, rect.width - 32);
-		const left = rect.left + (rect.width - maxWidth) / 2;
-
-		modalEl.style.position = "fixed";
-		modalEl.style.left = `${left}px`;
-		modalEl.style.width = `${maxWidth}px`;
-		modalEl.style.maxWidth = "none";
-	}
-
-	private setLoading(loading: boolean): void {
+	private setLoading(loading: boolean, busy?: "ask" | "rewrite"): void {
+		this.inputEl.disabled = loading;
 		this.askBtn.disabled = loading;
-		this.contentArea.contentEditable = loading ? "false" : "true";
-		const actionButtons =
-			this.inputToolbar.querySelectorAll<HTMLButtonElement>(
-				".coo-action-bar button",
-			);
-		actionButtons.forEach((btn) => {
-			btn.disabled = loading;
-		});
+		this.rewriteBtn.disabled = loading;
 		if (loading) {
-			this.askBtn.setText("Thinking...");
+			if (busy === "rewrite") {
+				this.rewriteBtn.setText("Thinking...");
+			} else {
+				this.askBtn.setText("Thinking...");
+			}
 		} else {
 			this.askBtn.setText("Ask");
-		}
-	}
-
-	private async handleQuickAction(action: BlockAction): Promise<void> {
-		this.setLoading(true);
-		this.contentArea.setText("");
-
-		try {
-			const userPrompt = buildActionPrompt(
-				action,
-				this.selectedText,
-				undefined,
-				this.settings.translateLanguage,
-				this.surroundingContext || undefined,
-			);
-
-			// Translate action uses the translate language; others use response language
-			const systemPrompt =
-				action === "translate"
-					? getTranslateSystemPrompt(
-							this.settings.translateLanguage,
-						)
-					: getBlockActionSystemPrompt(
-							this.settings.responseLanguage,
-						);
-
-			const response = await chatCompletion({
-				settings: this.settings,
-				systemPrompt,
-				userPrompt,
-			});
-
-			this.contentArea.setText(response);
-			this.setLoading(false);
-		} catch (err) {
-			const message =
-				err instanceof Error
-					? err.message
-					: "An unexpected error occurred.";
-			new Notice(message, 5000);
-			this.setLoading(false);
+			this.rewriteBtn.setText("Rewrite");
 		}
 	}
 
 	private async handleAsk(): Promise<void> {
-		const question = this.contentArea.getText().trim();
+		const question = this.inputEl.value.trim();
 		if (!question) {
 			new Notice("Please enter a question.");
 			return;
 		}
 
-		this.setLoading(true);
-		this.contentArea.setText("");
+		this.setLoading(true, "ask");
 
 		try {
-			const userPrompt = buildActionPrompt(
-				"ask",
-				this.selectedText,
-				question,
-				undefined,
-				this.surroundingContext || undefined,
+			const passage = getParagraphText(
+				this.editor,
+				this.bounds.startLine,
+				this.bounds.endLine,
+			);
+			const userPrompt = buildAskInput(passage, this.selectedText, question);
+			const systemPrompt = getBlockActionSystemPrompt(
+				this.settings.responseLanguage,
 			);
 
-			const response = await chatCompletion({
+			const result = await askChained({
+				app: this.app,
+				pluginDir: this.pluginDir,
+				notePath: this.notePath,
+				noteText: this.editor.getValue(),
 				settings: this.settings,
-				systemPrompt: getBlockActionSystemPrompt(
-					this.settings.responseLanguage,
-				),
+				systemPrompt,
 				userPrompt,
 			});
 
-			this.contentArea.setText(response);
-			this.setLoading(false);
+			// Answer writes straight into the note as a %%...%% note.
+			appendAnnotation(this.editor, this.bounds.endLine, result.text);
+
+			this.inputEl.value = "";
+			new Notice("Added note.", 2000);
 		} catch (err) {
 			const message =
-				err instanceof Error
-					? err.message
-					: "An unexpected error occurred.";
+				err instanceof Error ? err.message : "An unexpected error occurred.";
 			new Notice(message, 5000);
+		} finally {
+			this.setLoading(false);
+		}
+	}
+
+	private async handleRewrite(): Promise<void> {
+		const notes = getAnnotationNotes(this.editor, this.bounds.endLine);
+		if (notes.length === 0) {
+			new Notice("No notes yet. Ask a question first.");
+			return;
+		}
+
+		this.setLoading(true, "rewrite");
+
+		try {
+			const paragraphText = getParagraphText(
+				this.editor,
+				this.bounds.startLine,
+				this.bounds.endLine,
+			);
+			const { prefix, content } = extractMarkdownPrefix(paragraphText);
+
+			const userPrompt = buildRewriteInput(content, notes);
+			const systemPrompt = getRewriteSystemPrompt(
+				this.settings.responseLanguage,
+			);
+
+			// Rewrite is one-shot: no chaining, no web search, reasoning per setting.
+			const result = await chatCompletion({
+				settings: this.settings,
+				systemPrompt,
+				userPrompt,
+				store: false,
+				webSearchEnabled: false,
+			});
+
+			const annotationLines = findAllAnnotationLines(
+				this.editor,
+				this.bounds.endLine,
+			);
+			replaceParagraphAndRemoveAnnotations(
+				this.editor,
+				this.bounds.startLine,
+				this.bounds.endLine,
+				annotationLines,
+				prefix + result.text,
+			);
+
+			new Notice("Rewritten.");
+			this.close();
+		} catch (err) {
+			const message =
+				err instanceof Error ? err.message : "An unexpected error occurred.";
+			new Notice(message, 5000);
+		} finally {
 			this.setLoading(false);
 		}
 	}

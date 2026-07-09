@@ -1,22 +1,15 @@
 import { describe, it, expect } from "vitest";
 import {
-	buildActionPrompt,
 	replaceLanguageTag,
-	prependLanguageDirective,
+	replaceTranslationLanguageTag,
 	getBlockActionSystemPrompt,
 	getTranslateSystemPrompt,
-	DEVELOPER_PROMPT_FALLBACK,
+	getRewriteSystemPrompt,
+	getRegisterDocumentPrompt,
+	buildAskInput,
+	buildRewriteInput,
+	buildTranslateInput,
 } from "../src/prompts";
-
-describe("DEVELOPER_PROMPT_FALLBACK", () => {
-	it("contains the language tag placeholder", () => {
-		expect(DEVELOPER_PROMPT_FALLBACK).toContain("<language></language>");
-	});
-
-	it("contains expected content", () => {
-		expect(DEVELOPER_PROMPT_FALLBACK).toContain("knowledgeable assistant");
-	});
-});
 
 describe("replaceLanguageTag", () => {
 	const template = "Hello.\n<language></language>\nWorld.";
@@ -32,7 +25,6 @@ describe("replaceLanguageTag", () => {
 	it("fills the tag for Chinese", () => {
 		const result = replaceLanguageTag(template, "zh");
 		expect(result).toContain("Always respond in Simplified Chinese.");
-		expect(result).toContain("<language>");
 	});
 
 	it("fills the tag for Japanese", () => {
@@ -51,150 +43,131 @@ describe("replaceLanguageTag", () => {
 	});
 });
 
-describe("prependLanguageDirective", () => {
-	const prompt = "Some system prompt.";
+describe("replaceTranslationLanguageTag", () => {
+	const template = "You translate.\n<translationlanguage></translationlanguage>\nGo.";
 
-	it("returns prompt unchanged for English", () => {
-		expect(prependLanguageDirective(prompt, "en")).toBe(prompt);
+	it("removes the tag for English", () => {
+		const result = replaceTranslationLanguageTag(template, "English");
+		expect(result).not.toContain("<translationlanguage>");
+		expect(result).toContain("Go.");
 	});
 
-	it("prepends directive for Chinese", () => {
-		const result = prependLanguageDirective(prompt, "zh");
-		expect(result).toBe(
-			"Always respond in Simplified Chinese.\n\nSome system prompt.",
-		);
+	it("fills the tag for Chinese", () => {
+		const result = replaceTranslationLanguageTag(template, "Chinese");
+		expect(result).toContain("Translate into Chinese.");
 	});
 
-	it("prepends directive for Japanese", () => {
-		const result = prependLanguageDirective(prompt, "ja");
-		expect(result).toMatch(/^Always respond in Japanese\./);
-		expect(result).toContain(prompt);
+	it("fills the tag for Japanese", () => {
+		const result = replaceTranslationLanguageTag(template, "Japanese");
+		expect(result).toContain("Translate into Japanese.");
 	});
 });
 
 describe("getBlockActionSystemPrompt", () => {
-	it("returns the block action prompt without directive for English", () => {
+	it("contains the passage scope and ask section for English", () => {
 		const result = getBlockActionSystemPrompt("en");
-		expect(result).toContain("plain text only");
+		expect(result).toContain("<passage>");
+		expect(result).toContain("<ask>");
 		expect(result).not.toContain("Always respond in");
 	});
 
-	it("prepends language directive for Chinese", () => {
+	it("applies language directive for Chinese", () => {
 		const result = getBlockActionSystemPrompt("zh");
 		expect(result).toContain("Always respond in Simplified Chinese.");
-		expect(result).toContain("plain text only");
+		expect(result).toContain("<passage>");
 	});
 
-	it("prepends language directive for Japanese", () => {
+	it("applies language directive for Japanese", () => {
 		const result = getBlockActionSystemPrompt("ja");
 		expect(result).toContain("Always respond in Japanese.");
-		expect(result).toContain("plain text only");
-	});
-
-	it("prepends language directive for Spanish", () => {
-		const result = getBlockActionSystemPrompt("es");
-		expect(result).toContain("Always respond in Spanish.");
-	});
-
-	it("prepends language directive for French", () => {
-		const result = getBlockActionSystemPrompt("fr");
-		expect(result).toContain("Always respond in French.");
 	});
 });
 
 describe("getTranslateSystemPrompt", () => {
-	it("includes translate language name for Chinese", () => {
+	it("includes translate directive for Chinese", () => {
 		const result = getTranslateSystemPrompt("Chinese");
-		expect(result).toContain("Always respond in Chinese.");
-		expect(result).toContain("plain text only");
+		expect(result).toContain("Translate into Chinese.");
+		expect(result).toContain("<passage>");
 	});
 
-	it("includes translate language name for English", () => {
+	it("removes the translate tag for English", () => {
 		const result = getTranslateSystemPrompt("English");
-		expect(result).toContain("Always respond in English.");
-	});
-
-	it("includes translate language name for Japanese", () => {
-		const result = getTranslateSystemPrompt("Japanese");
-		expect(result).toContain("Always respond in Japanese.");
+		expect(result).not.toContain("<translationlanguage>");
+		expect(result).not.toContain("Translate into");
 	});
 });
 
-describe("buildActionPrompt", () => {
-	const sampleText = "  The quick brown fox  ";
-
-	it("translate uses default language (Chinese)", () => {
-		const result = buildActionPrompt("translate", sampleText);
-		expect(result).toBe("Translate into Chinese:\n\nThe quick brown fox");
+describe("getRewriteSystemPrompt", () => {
+	it("contains rewrite rules for English", () => {
+		const result = getRewriteSystemPrompt("en");
+		expect(result).toContain("revise a passage");
+		expect(result).not.toContain("Always respond in");
 	});
 
-	it("translate uses specified language", () => {
-		const result = buildActionPrompt(
-			"translate",
-			sampleText,
-			undefined,
-			"Spanish",
-		);
-		expect(result).toBe("Translate into Spanish:\n\nThe quick brown fox");
+	it("applies language directive for Chinese", () => {
+		const result = getRewriteSystemPrompt("zh");
+		expect(result).toContain("Always respond in Simplified Chinese.");
+	});
+});
+
+describe("getRegisterDocumentPrompt", () => {
+	it("returns the registration prompt", () => {
+		const result = getRegisterDocumentPrompt();
+		expect(result).toContain("shared a document");
+		expect(result).toContain("Store it in context");
+	});
+});
+
+describe("buildAskInput", () => {
+	const passage = "  The quick brown fox jumps.  ";
+
+	it("includes passage and question without a selection", () => {
+		const result = buildAskInput(passage, undefined, "What?");
+		expect(result).toContain("<passage>");
+		expect(result).toContain("The quick brown fox jumps.");
+		expect(result).toContain("Question: What?");
+		expect(result).not.toContain("highlighted");
 	});
 
-	it("example action", () => {
-		const result = buildActionPrompt("example", sampleText);
-		expect(result).toBe(
-			"Give one concrete example of this:\n\nThe quick brown fox",
-		);
+	it("includes the highlighted selection when provided", () => {
+		const result = buildAskInput(passage, "brown fox", "What?");
+		expect(result).toContain('The user highlighted this part: "brown fox"');
+		expect(result).toContain("Question: What?");
 	});
 
-	it("expand action", () => {
-		const result = buildActionPrompt("expand", sampleText);
-		expect(result).toBe(
-			"Expand on this with more detail:\n\nThe quick brown fox",
-		);
+	it("ignores a blank selection", () => {
+		const result = buildAskInput(passage, "   ", "What?");
+		expect(result).not.toContain("highlighted");
 	});
 
-	it("eli5 action", () => {
-		const result = buildActionPrompt("eli5", sampleText);
-		expect(result).toBe(
-			"Explain this like I'm five:\n\nThe quick brown fox",
-		);
+	it("trims the question", () => {
+		const result = buildAskInput(passage, undefined, "  What?  ");
+		expect(result).toContain("Question: What?");
+	});
+});
+
+describe("buildRewriteInput", () => {
+	const passage = "  Some paragraph text.  ";
+
+	it("includes passage and notes", () => {
+		const result = buildRewriteInput(passage, ["note one", "note two"]);
+		expect(result).toContain("<passage>");
+		expect(result).toContain("Some paragraph text.");
+		expect(result).toContain("<notes>");
+		expect(result).toContain("- note one");
+		expect(result).toContain("- note two");
 	});
 
-	it("ask action with question", () => {
-		const result = buildActionPrompt(
-			"ask",
-			sampleText,
-			"  What does this mean?  ",
-		);
-		expect(result).toBe(
-			'Text: "The quick brown fox"\n\nQuestion: What does this mean?',
-		);
+	it("omits the notes block when there are no notes", () => {
+		const result = buildRewriteInput(passage, []);
+		expect(result).toContain("<passage>");
+		expect(result).not.toContain("<notes>");
 	});
+});
 
-	it("ask action without question falls back to empty", () => {
-		const result = buildActionPrompt("ask", sampleText);
-		expect(result).toBe('Text: "The quick brown fox"\n\nQuestion: ');
+describe("buildTranslateInput", () => {
+	it("wraps the passage in <passage> tags and trims", () => {
+		const result = buildTranslateInput("  entanglement  ");
+		expect(result).toBe("<passage>\nentanglement\n</passage>");
 	});
-
-	it("rewrite action incorporates phrases", () => {
-		const result = buildActionPrompt(
-			"rewrite",
-			sampleText,
-			"concept A, concept B",
-		);
-		expect(result).toContain(
-			"Phrases to incorporate: concept A, concept B",
-		);
-		expect(result).toContain("Text: The quick brown fox");
-	});
-
-	it("rewrite action without prompt uses empty string", () => {
-		const result = buildActionPrompt("rewrite", sampleText);
-		expect(result).toContain("Phrases to incorporate: .");
-	});
-
-	it("trims block text", () => {
-		const result = buildActionPrompt("example", "  \n  hello  \n  ");
-		expect(result).toBe("Give one concrete example of this:\n\nhello");
-	});
-
 });

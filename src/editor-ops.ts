@@ -1,9 +1,9 @@
-import { Editor } from "obsidian";
+import type { Editor, EditorPosition } from "obsidian";
 
 interface SelectionContext {
 	selectedText: string;
-	from: { line: number; ch: number };
-	to: { line: number; ch: number };
+	from: EditorPosition;
+	to: EditorPosition;
 }
 
 interface ParagraphBounds {
@@ -95,22 +95,34 @@ export function findParagraphBounds(
 }
 
 /**
- * Like findParagraphBounds, but if the cursor is on an annotation line,
- * falls back to the paragraph directly above it. This lets the rewrite
- * command work when the cursor lands on the %%...%% line after phrase picking.
+ * Find the paragraph span covering a selection: from the paragraph containing
+ * the selection start to the paragraph containing the selection end. For a
+ * single-paragraph selection this is just that paragraph; for a multi-paragraph
+ * selection it spans all paragraphs in the range. Notes attach at the end of
+ * the span (the last paragraph), not the first.
  */
-export function findParagraphBoundsNear(
+export function findSelectionSpan(
 	editor: Editor,
-	lineNum: number,
+	from: EditorPosition,
+	to: EditorPosition,
 ): ParagraphBounds | null {
-	const bounds = findParagraphBounds(editor, lineNum);
-	if (bounds) return bounds;
+	const start = findParagraphBounds(editor, from.line);
+	if (!start) return null;
+	if (to.line <= from.line) return start;
 
-	if (lineNum > 0 && isAnnotationLine(editor.getLine(lineNum))) {
-		return findParagraphBounds(editor, lineNum - 1);
+	let end = findParagraphBounds(editor, to.line);
+	// Selection ends on an empty/annotation line — walk up to the last paragraph.
+	if (!end) {
+		for (let i = to.line; i >= 0; i--) {
+			const b = findParagraphBounds(editor, i);
+			if (b) {
+				end = b;
+				break;
+			}
+		}
 	}
-
-	return null;
+	if (!end) return start;
+	return { startLine: start.startLine, endLine: Math.max(start.endLine, end.endLine) };
 }
 
 /**
@@ -146,148 +158,107 @@ export function extractMarkdownPrefix(text: string): MarkdownPrefix {
 }
 
 /**
- * Find an annotation line immediately after the paragraph end.
- * Returns the line number if found, null otherwise.
+ * The inner content of a single %%...%% annotation line (no comma splitting —
+ * each annotation line is one note). Empty string if the annotation is empty.
  */
-export function findAnnotationLine(
-	editor: Editor,
-	paragraphEndLine: number,
-): number | null {
-	const nextLine = paragraphEndLine + 1;
-	if (nextLine >= editor.lineCount()) return null;
-
-	const line = editor.getLine(nextLine);
-	if (isAnnotationLine(line)) return nextLine;
-
-	return null;
-}
-
-/**
- * Parse annotations from a %%...%% line.
- * "%%a, b, c%%" → ["a", "b", "c"]
- */
-export function parseAnnotations(line: string): string[] {
+function parseAnnotationContent(line: string): string {
 	const trimmed = line.trim();
 	const inner = trimmed.slice(2, -2).trim();
-	if (!inner) return [];
-	return inner
-		.split(",")
-		.map((s) => s.trim())
-		.filter((s) => s.length > 0);
+	return inner;
 }
 
 /**
- * Format annotations into a %%...%% line.
- * ["a", "b"] → "%%a, b%%"
+ * Find all consecutive annotation lines below the paragraph.
+ * Notes are a separate block, separated from the paragraph by a blank line,
+ * so any blank line(s) between the paragraph and the notes are skipped first.
+ * Each annotation line is one note (Ask answer). Returns their line numbers.
  */
-export function formatAnnotations(annotations: string[]): string {
-	return `%%${annotations.join(", ")}%%`;
-}
-
-/**
- * Append new annotations to a paragraph. Merges with existing %%...%%
- * or creates a new annotation line after the paragraph.
- * Skips duplicates.
- */
-export function appendAnnotations(
+export function findAllAnnotationLines(
 	editor: Editor,
 	paragraphEndLine: number,
-	newAnnotations: string[],
-): void {
-	const existingLineNum = findAnnotationLine(editor, paragraphEndLine);
-
-	if (existingLineNum !== null) {
-		// Merge with existing
-		const existingLine = editor.getLine(existingLineNum);
-		const existing = parseAnnotations(existingLine);
-		const merged = [...existing];
-
-		for (const ann of newAnnotations) {
-			if (!merged.includes(ann)) {
-				merged.push(ann);
-			}
-		}
-
-		const newLine = formatAnnotations(merged);
-		const from = { line: existingLineNum, ch: 0 };
-		const to = { line: existingLineNum, ch: existingLine.length };
-		editor.replaceRange(newLine, from, to);
-	} else {
-		// Create new annotation line after paragraph
-		const lineText = editor.getLine(paragraphEndLine);
-		const insertPos = { line: paragraphEndLine, ch: lineText.length };
-		const newLine = "\n" + formatAnnotations(newAnnotations);
-		editor.replaceRange(newLine, insertPos);
+): number[] {
+	let i = paragraphEndLine + 1;
+	while (i < editor.lineCount() && isEmptyLine(editor.getLine(i))) {
+		i++;
 	}
+	const lines: number[] = [];
+	while (i < editor.lineCount() && isAnnotationLine(editor.getLine(i))) {
+		lines.push(i);
+		i++;
+	}
+	return lines;
 }
 
 /**
- * Gather surrounding document context for a paragraph.
- * Returns the nearest heading above + up to 10 lines before
- * and 5 lines after the paragraph (excluding the paragraph itself).
+ * Get all annotation notes below a paragraph (one note per %%...%% line).
  */
-export function gatherSurroundingContext(
+export function getAnnotationNotes(
 	editor: Editor,
-	startLine: number,
-	endLine: number,
-): string {
-	const totalLines = editor.lineCount();
-	const parts: string[] = [];
-
-	// Find nearest heading above
-	let headingLine = -1;
-	for (let i = startLine - 1; i >= 0; i--) {
-		if (/^#{1,6}\s/.test(editor.getLine(i))) {
-			headingLine = i;
-			break;
-		}
+	paragraphEndLine: number,
+): string[] {
+	const lineNums = findAllAnnotationLines(editor, paragraphEndLine);
+	const notes: string[] = [];
+	for (const lineNum of lineNums) {
+		const content = parseAnnotationContent(editor.getLine(lineNum));
+		if (content) notes.push(content);
 	}
-
-	// If heading is beyond the 10-line window, include it separately
-	const beforeStart = Math.max(0, startLine - 10);
-	if (headingLine >= 0 && headingLine < beforeStart) {
-		parts.push(editor.getLine(headingLine));
-	}
-
-	// Lines before paragraph (up to 10 lines; includes heading if nearby)
-	const beforeLines: string[] = [];
-	for (let i = beforeStart; i < startLine; i++) {
-		beforeLines.push(editor.getLine(i));
-	}
-	if (beforeLines.length > 0) {
-		parts.push(beforeLines.join("\n"));
-	}
-
-	// Lines after paragraph (up to 5 lines)
-	const afterEnd = Math.min(totalLines - 1, endLine + 5);
-	const afterLines: string[] = [];
-	for (let i = endLine + 1; i <= afterEnd; i++) {
-		afterLines.push(editor.getLine(i));
-	}
-	if (afterLines.length > 0) {
-		parts.push(afterLines.join("\n"));
-	}
-
-	return parts.join("\n\n").trim();
+	return notes;
 }
 
 /**
- * Replace paragraph text and remove the annotation line.
- * Used by Flow C (rewrite).
+ * Append a single note as a new %%...%% line below the paragraph, after any
+ * existing annotation lines. The first note is separated from the paragraph by
+ * a blank line so it renders as its own block (not inline with the paragraph);
+ * subsequent notes stack directly under the previous one. Newlines in the note
+ * are collapsed so the annotation stays on one line.
+ */
+export function appendAnnotation(
+	editor: Editor,
+	paragraphEndLine: number,
+	note: string,
+): void {
+	const safe = note.replace(/\n+/g, " ").trim();
+	if (!safe) return;
+
+	const existing = findAllAnnotationLines(editor, paragraphEndLine);
+	const insertAfterLine = existing[existing.length - 1] ?? paragraphEndLine;
+	const lineText = editor.getLine(insertAfterLine);
+	const insertPos = { line: insertAfterLine, ch: lineText.length };
+	// First note: blank line separator. Subsequent notes: stack directly.
+	const sep = existing.length > 0 ? "\n" : "\n\n";
+	editor.replaceRange(`${sep}%%${safe}%%`, insertPos);
+}
+
+/**
+ * Replace the paragraph (and any annotation lines below it) with new text.
+ * Used by Rewrite: the rewritten paragraph replaces the original + notes.
  */
 export function replaceParagraphAndRemoveAnnotations(
 	editor: Editor,
 	startLine: number,
 	endLine: number,
-	annotationLine: number | null,
+	annotationLines: number[],
 	newText: string,
 ): void {
-	// Determine the range to replace: paragraph + annotation line (if present)
-	const lastLine = annotationLine !== null ? annotationLine : endLine;
+	const lastLine = annotationLines[annotationLines.length - 1] ?? endLine;
 	const lastLineText = editor.getLine(lastLine);
 
 	const from = { line: startLine, ch: 0 };
 	const to = { line: lastLine, ch: lastLineText.length };
 
 	editor.replaceRange(newText, from, to);
+}
+
+/**
+ * Insert a bracketed translation immediately after the given position.
+ * The original selection is preserved; the translation lands right after it.
+ * One editor op — Ctrl+Z reverts it.
+ */
+export function insertTranslationAfter(
+	editor: Editor,
+	pos: EditorPosition,
+	translation: string,
+): void {
+	const safe = translation.replace(/\n+/g, " ").trim();
+	editor.replaceRange(` (${safe})`, pos);
 }

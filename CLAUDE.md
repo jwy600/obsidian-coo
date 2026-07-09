@@ -2,37 +2,38 @@
 
 ## What is this?
 
-An Obsidian plugin that brings AI-powered block-level annotation and rewriting into your notes. Inspired by **Coo** (a personalized wiki built on chat), this plugin lets users discuss selected text with an LLM, pick key phrases from the response, and rewrite paragraphs incorporating those annotations.
+An Obsidian plugin that brings AI-powered discussion and translation into your notes, grounded in the note you're editing. Inspired by **Coo** (a personalized wiki built on chat), this plugin lets you discuss a selected paragraph with an LLM (answers become notes you can fold back in via Rewrite), translate a word or phrase inline, and chain follow-up questions using OpenAI's stored `previous_response_id`.
 
 ### Reference app: `~/coo-app-next`
 
-The original Coo web app (Next.js + React + Zustand + Supabase + OpenAI). This plugin ports a subset of its features adapted to Obsidian's editor model.
+The original Coo web app (Next.js + React + Zustand + OpenAI). This plugin ports a subset of its focus-mode + document-registration features, adapted to Obsidian's editor model.
 
 **What was ported:**
 
 | Feature | Reference source | Plugin file |
 |---------|-----------------|-------------|
-| System prompts (language-neutral with `<language>` tag) | `prompts/*.md` | `src/prompts.ts` + `src/prompt-loader.ts` |
-| Block actions (translate, example, expand, eli5, ask, rewrite) | `app/api/block-action/route.ts` | `src/prompts.ts` (`buildActionPrompt`) |
+| Block-action prompts (`<scope>` / `<transformations>` / `<ask>` split) | `lib/config/promptTemplates.ts` | `src/prompts.ts` |
+| Translate prompt (`<translationlanguage>` tag) | `lib/config/promptTemplates.ts` | `src/prompts.ts` |
+| Rewrite prompt | `lib/config/promptTemplates.ts` | `src/prompts.ts` |
+| Document registration (`store: true` priming call) | `lib/api/registerDocument.ts` | `src/chain.ts` (`registerNote`) |
+| Conversation chaining (`previous_response_id`) | `lib/api/openAiClient.ts` | `src/chain.ts` (`askChained`) |
 | OpenAI Responses API (non-streaming) | `lib/api/openAiClient.ts` | `src/ai-client.ts` (raw `fetch`) |
 | Settings (model, reasoning, web search, language) | `lib/store/settings-slice.ts` | `src/settings.ts` |
 
 **What was NOT ported (Obsidian handles natively or not applicable):**
 
-- Block parsing — Obsidian's editor is already markdown; no need to parse LLM output into blocks
-- Cards / block curation — replaced by Obsidian's native note structure
-- Export to markdown — notes are already markdown files
-- State management (Zustand store) — plugin uses Obsidian's `loadData`/`saveData`
-- Conversation chaining (`previous_response_id`) — each request is independent
-- Thread / message history — not implemented; each interaction is standalone
+- In-place focus editor (CodeMirror widgets) — replaced by a composer modal; the note itself is the canvas
+- Block parsing — Obsidian's editor is already markdown
+- Chat threads / message history — one chain per note (a stored `response_id`), no message list
+- Streaming — non-streaming only
 
-**What was invented for Obsidian (not in reference app):**
+**What is Obsidian-specific:**
 
-- **Phrase picking via drag-select** — user selects text in the AI response modal, phrases are written as `%%...%%` annotations directly into the editor
-- **`%%...%%` annotation format** — Obsidian comments store picked phrases below paragraphs, invisible in reading mode
-- **Rewrite from annotations** — cursor-in-paragraph command reads `%%...%%`, calls rewrite action, replaces paragraph and removes annotations
-- **Editor context menu** — right-click "coo rewrite" / "coo discuss" appears contextually
-- **ChatGPT-style composer** — unified contenteditable area with persistent toolbar, pill buttons, shimmer loading, rise-in animation
+- **Composer modal over the note** — the modal is a command bar (question input + Ask + Rewrite); all AI output writes straight into the note, not into the modal
+- **`%%...%%` notes** — Ask answers stored as Obsidian comments below the paragraph (visible in edit mode, invisible in reading mode), consumed by Rewrite
+- **Inline Translate** — bracketed translation inserted right after the selection, per word/phrase
+- **Per-note chain storage** — the chain head (`response_id`) stored in a plugin-side JSON file keyed by note path
+
 ## Tech stack
 
 - **Language**: TypeScript (strict mode)
@@ -49,22 +50,23 @@ npm install          # install dependencies
 npm run dev          # watch mode (recompiles on save)
 npm run build        # type-check + production bundle
 npm run lint         # eslint (includes obsidian-specific rules)
+npm test             # vitest
 ```
 
 ## Project structure
 
 ```
 src/
-  main.ts            # Plugin lifecycle + 3 commands + context menu + migration (~300 lines)
-  settings.ts        # CooSettingTab with 7 dropdowns/toggles, DEFAULT_SETTINGS, re-exports utils (~210 lines)
-  settings-utils.ts  # Pure functions: locale detection, language conflict checks (~45 lines)
-  types.ts           # Shared types + LANGUAGE_MAP, TRANSLATE_TO_RESPONSE_MAP, RESPONSE_TO_TRANSLATE_MAP (~60 lines)
-  prompts.ts         # Language-neutral prompts + replaceLanguageTag/prependLanguageDirective + buildActionPrompt (~145 lines)
-  prompt-loader.ts   # Flat prompts/ folder: ensure defaults, list, load, migrate folders+filenames (~175 lines)
-  ai-client.ts       # OpenAI Responses API: chatCompletion (non-streaming only) (~130 lines)
-  query-modal.ts     # Flow A modal: text input → AI → create note (~100 lines)
-  composer-modal.ts  # Flow B modal: ChatGPT-style composer with contenteditable area (~260 lines)
-  editor-ops.ts      # Paragraph detection, %%annotation%% parsing/editing (~270 lines)
+  main.ts            # Plugin lifecycle + 3 commands + context menu + legacy cleanup
+  settings.ts        # CooSettingTab (6 settings), DEFAULT_SETTINGS, re-exports utils
+  settings-utils.ts  # Pure functions: locale detection, language conflict checks
+  types.ts           # Shared types + LANGUAGE_MAP, *_MAP
+  prompts.ts         # Ported prompts (block-action/translate/rewrite/register) + language tags + input builders
+  ai-client.ts       # Responses API: chatCompletion (text+responseId), registerNote, parseResponse, CooApiError
+  chain.ts           # Per-note chaining: askChained, reRegisterNote, chain-head storage in chain-data.json
+  translate.ts       # Standalone Translate action (inline bracketed insertion)
+  composer-modal.ts  # Discuss modal: Ask (selection-aware, chained) + Rewrite
+  editor-ops.ts      # Paragraph detection, %%note%% CRUD (one per line), translate insertion
 ```
 
 Output: `main.js` + `manifest.json` + `styles.css` at repo root (loaded by Obsidian).
@@ -73,87 +75,91 @@ Output: `main.js` + `manifest.json` + `styles.css` at repo root (loaded by Obsid
 
 | File | Purpose |
 |------|---------|
-| `src/main.ts` | `CooPlugin` class: `onload` registers 3 commands (`coo-ask`, `coo-discuss`, `coo-rewrite`) + editor context menu. Private helpers `openDiscuss()` and `performRewrite()` shared by command + context menu |
-| `src/settings.ts` | `DEFAULT_SETTINGS`, `CooSettingTab` with 7 settings, re-exports from `settings-utils` |
-| `src/settings-utils.ts` | Pure helper functions: `mapLocaleToResponseLanguage()`, `detectObsidianLocale()`, `isLanguageConflict()`, `getDefaultTranslateLanguage()` |
-| `src/ai-client.ts` | `chatCompletion()` (non-streaming only) via raw fetch to Responses API |
-| `src/prompts.ts` | Language-neutral `BLOCK_ACTION_PROMPT` + `DEVELOPER_PROMPT_FALLBACK` with `<language>` tag, `replaceLanguageTag()`, `prependLanguageDirective()`, `getBlockActionSystemPrompt()`, `getTranslateSystemPrompt()`, `buildActionPrompt()` |
-| `src/prompt-loader.ts` | Flat `prompts/` folder management: `migratePromptFolders()`, `ensureDefaultPrompts()`, `listPromptFiles()`, `loadDeveloperPrompt()`, `migratePromptFilename()` |
-| `src/query-modal.ts` | Flow A: "Coo: Ask" — question input → creates new note with response |
-| `src/composer-modal.ts` | Flow B: "Coo: Discuss" — ChatGPT-style composer with contenteditable area, quick actions, phrase picking. All actions include surrounding document context |
-| `src/editor-ops.ts` | Paragraph bounds detection, `%%...%%` annotation CRUD, paragraph replacement |
+| `src/main.ts` | `CooPlugin`: `onload` registers 3 commands (`coo-discuss`, `coo-translate`, `coo-re-register`) + editor context menu + legacy prompt cleanup. Helpers `openDiscuss()`, `reRegister()` |
+| `src/settings.ts` | `DEFAULT_SETTINGS`, `CooSettingTab` with 6 settings, re-exports from `settings-utils` |
+| `src/settings-utils.ts` | `mapLocaleToResponseLanguage()`, `detectObsidianLocale()`, `isLanguageConflict()`, `getDefaultTranslateLanguage()` |
+| `src/ai-client.ts` | `chatCompletion()` (returns `{ text, responseId }`), `registerNote()` (priming call → root id), `parseResponse()`, `CooApiError`. Supports `previousResponseId`, `store`, per-call `reasoningEffort`/`webSearchEnabled` overrides |
+| `src/prompts.ts` | Ported `BLOCK_ACTION_PROMPT` (`<scope>`/`<transformations>`/`<ask>`), `BLOCK_ACTION_TRANSLATE_PROMPT`, `REWRITE_PROMPT`, `REGISTER_DOC_PROMPT`. `replaceLanguageTag()` / `replaceTranslationLanguageTag()`. Input builders `buildAskInput()`, `buildRewriteInput()`, `buildTranslateInput()` |
+| `src/chain.ts` | Per-note chaining: `askChained()` (registers on first Ask, chains, retries on expired id), `reRegisterNote()`, `getChainHead`/`setChainHead`/`clearChain` (persisted in `chain-data.json`) |
+| `src/translate.ts` | `performTranslate()` — captures selection, calls Translate, inserts `(translation)` after the selection |
+| `src/composer-modal.ts` | Discuss modal: passage preview + question input + Ask + Rewrite. Ask writes `%%…%%` to the note (chained); Rewrite folds notes into the paragraph (one-shot) |
+| `src/editor-ops.ts` | `findParagraphBounds()`, `getParagraphText()`, `extractMarkdownPrefix()`, `%%…%%` CRUD (`findAllAnnotationLines`, `getAnnotationNotes`, `appendAnnotation`, `replaceParagraphAndRemoveAnnotations`), `insertTranslationAfter()` |
 | `manifest.json` | Plugin metadata (`obsidian-coo`) |
-| `styles.css` | Composer box, pill buttons, animations (rise-in, shimmer), `.coo-picked` highlight |
+| `styles.css` | Composer modal, Ask/Rewrite buttons, passage preview |
 
-## Three user flows
+## Two features + chaining
 
-### Flow A — "Coo: Ask" (`coo-ask`)
-Command palette (works from anywhere) → modal with textarea → Submit → AI generates structured response → new `.md` note created and opened. Filename derived from the query.
+### Discuss (`coo-discuss`)
+Select text in a paragraph → command palette or right-click → composer modal (passage preview + question input + Ask + Rewrite). **The modal is the command bar; the note is the canvas** — AI output writes into the note, not the modal.
 
-### Flow B — "Coo: Discuss" (`coo-discuss`)
-Select text in editor → command palette → ChatGPT-style composer modal with:
-- **Single contenteditable area** — serves as both input and response display. User types a question or clicks a quick action; AI response fills the same area. User can edit the response text directly.
-- **Toolbar row** (always visible) — quick action pill buttons (Translate / Example / Expand / ELI5) on the left, Ask button on the right.
-- **Quick actions**: non-streaming, block-action prompt. **Ask**: non-streaming, block-action prompt. Both include surrounding document context (nearest heading + up to 10 lines before and 5 lines after) via `gatherSurroundingContext()`.
-- After response, **phrase picking** activates: drag-select text → highlighted with `.coo-picked` → immediately appended as `%%phrase1, phrase2%%` annotation below the source paragraph. Each pick is a separate editor operation (undoable). Duplicates are skipped.
+- **Ask** (selection-aware): the highlighted phrase is the focal point of the question. The answer is appended to the note as a `%%…%%` line below the paragraph. Asks **chain** via `previous_response_id` (the note is registered as the conversation root on the first Ask).
+- **Rewrite**: folds the `%%…%%` notes into the paragraph and removes them. One-shot — does not chain.
+- Undo everywhere is native Ctrl+Z (each action is one editor op).
 
-### Flow C — "Coo: Rewrite" (`coo-rewrite`)
-Cursor in a paragraph that has a `%%...%%` annotation line below it → command palette (or right-click context menu) → AI rewrites the paragraph incorporating the annotations → paragraph replaced, annotation line removed. Ctrl+Z undoes.
+### Translate (`coo-translate`)
+Select a word or phrase → command palette or right-click → the translation is inserted inline, bracketed `( )`, immediately after the selection. The original text is preserved. One editor op (Ctrl+Z reverts). Does not chain.
+
+### Re-register note (`coo-re-register`)
+Refreshes the chaining snapshot: re-registers the whole note (new root id) and resets the chain. Use after heavily editing the note — otherwise the registered context drifts stale.
+
+## Chaining
+
+Each note has a conversation root. On the first Ask, the whole note is sent to OpenAI with `store: true` and the `REGISTER_DOC_PROMPT`; the returned `response_id` (R0) is stored in `chain-data.json` keyed by note path. Each Ask passes `previous_response_id: <last>` and advances the stored head, so follow-up questions accumulate context server-side.
+
+- Only **Ask** chains. Rewrite and Translate are one-shot.
+- If a chained call is rejected (HTTP 400 — typically an expired `response_id` after OpenAI evicts the stored response), the chain resets and the Ask retries once from a fresh registration.
+- **Re-register note** captures a fresh snapshot and resets the chain (prior Q&A context drops).
+- The registered snapshot is a point-in-time copy of the note. The passage you Ask about is always sent fresh; the broad note context can drift if you edit heavily (that's what re-register is for).
 
 ## Annotation format
 
-Annotations are stored as Obsidian comments (invisible in reading mode):
+Each Ask answer is stored as its own `%%…%%` line (Obsidian comment) below the paragraph — visible in edit mode, invisible in reading mode:
 
 ```markdown
 Some paragraph text that the user discussed with AI.
-%%translation of key concept, a concrete example, simplified explanation%%
+%%First answer.%%
+%%Second answer.%%
 ```
 
-- Parsed by `parseAnnotations()`: `%%a, b, c%%` → `['a', 'b', 'c']`
-- Created/appended by `appendAnnotations()` in `editor-ops.ts`
-- Consumed and removed by `replaceParagraphAndRemoveAnnotations()` during rewrite
+- `appendAnnotation()` adds a new `%%…%%` line below the paragraph (newlines collapsed to one line).
+- `getAnnotationNotes()` reads all consecutive `%%…%%` lines below a paragraph (one note per line — no comma splitting).
+- `replaceParagraphAndRemoveAnnotations()` consumes them during Rewrite.
+- Legacy comma-separated `%%a, b, c%%` annotations (from older plugin versions) are read as a single note — still consumed by Rewrite.
 
 ## Settings
 
 | Setting | Type | Default | Notes |
 |---------|------|---------|-------|
 | OpenAI API key | password input | `''` | Required. Stored locally via `saveData()` |
-| Model | dropdown | `gpt-5.2` | `gpt-5.2` or `gpt-5-mini` |
-| Reasoning effort | dropdown | `none` | `none` / `low` / `medium` / `high` — sent as `reasoning.effort` |
-| Web search | toggle | `false` | Sends `tools: [{ type: 'web_search' }]` |
-| Response language | dropdown | `en` | `en` / `es` / `fr` / `zh` / `ja` — auto-detected from Obsidian locale on first use. Applies language directive to all prompts at runtime |
-| Translation language | dropdown | `Chinese` | Target for Translate action. Cannot be the same as response language (auto-adjusted on conflict) |
-| System prompt | dropdown | `knowledgeassistant.md` | File from flat `prompts/` folder in plugin dir; supports `<language></language>` tag for runtime language injection |
+| Model | dropdown | `gpt-5.2` | `gpt-5.2` / `gpt-5-mini` / `gpt-5.5` |
+| Reasoning effort | dropdown | `none` | `none` / `low` / `medium` / `high` — applies to Rewrite; Ask skips reasoning for speed |
+| Web search | toggle | `false` | Scopes to Ask only. Sends `tools: [{ type: 'web_search' }]` |
+| Response language | dropdown | `en` | `en` / `es` / `fr` / `zh` / `ja` — auto-detected from Obsidian locale on first use. Fills the `<language>` tag at runtime |
+| Translation language | dropdown | `Chinese` | Target for Translate. Cannot be the same as response language (auto-adjusted on conflict) |
 
 ## Prompt system
 
+Prompts are ported from coo-app-next and stored language-neutral as inline strings in `src/prompts.ts` (no `prompts/` folder — the legacy prompt-loader was removed with Flow A).
+
 ### Language injection
 
-Prompts are stored language-neutral. Language directives are injected at runtime:
+- **`<language></language>` tag** (block-action, rewrite prompts): `replaceLanguageTag()` fills it with "Always respond in {language}." for non-English, or removes it for English.
+- **`<translationlanguage></translationlanguage>` tag** (translate prompt): `replaceTranslationLanguageTag()` fills it with "Translate into {language}." or removes it for English.
+- Translate uses the translation target language, independent of response language.
 
-- **Developer prompts** (`.md` files in `prompts/`): Use `<language></language>` tag. `replaceLanguageTag()` fills it for non-English languages or removes it for English.
-- **Block-action prompt** (hardcoded): `prependLanguageDirective()` adds "Always respond in {language}." at the top for non-English.
-- **Translate action**: Uses `getTranslateSystemPrompt()` with the translation target language, independent of response language.
+### Input builders
 
-### Prompt files
-
-Stored in flat `prompts/` folder (no per-language subfolders):
-- `knowledgeassistant.md` — deep explanation style (default)
-- `atomic.md` — concise atomic-note style
-- Users can add custom `.md` files; they appear in the settings dropdown
-
-### Migration
-
-On plugin load, `migratePromptFolders()` runs before `ensureDefaultPrompts()`:
-- Moves files from old `prompts/en/` and `prompts/zh/` into flat `prompts/`
-- Renames `developer.md` → `knowledgeassistant.md`
-- `migratePromptFilename()` handles the setting value migration
+- `buildAskInput(passage, selection, question)` → `<passage>` + highlighted selection + `Question:`.
+- `buildRewriteInput(passage, notes)` → `<passage>` + `<notes>` bullet list.
+- `buildTranslateInput(passage)` → `<passage>` (the selected text).
 
 ## API client details
 
-- **Endpoint**: `POST https://api.openai.com/v1/responses` (Responses API, not Chat Completions)
-- **Non-streaming only** (`chatCompletion`): uses `fetch`, parses `output_text` or falls back to `output[].content[].text`
-- **Error handling**: extracts error message from response body, maps HTTP codes to user-friendly notices
+- **Endpoint**: `POST https://api.openai.com/v1/responses` (Responses API)
+- **Non-streaming only**: `chatCompletion()` uses `fetch`, parses `id` (responseId) + `output_text` (falls back to `output[].content[].text`)
+- **Chaining**: `previous_response_id` + `store: true` (set per call — Ask/register store; Rewrite/Translate don't)
+- **Per-call overrides**: `reasoningEffort` and `webSearchEnabled` can override settings (Ask → no reasoning + web search if enabled; Rewrite → reasoning per setting, no web search; Translate/Register → neither)
+- **Errors**: `CooApiError` carries the HTTP status so callers can react (e.g. expired-id retry on 400). HTTP codes mapped to user-friendly notices.
 - Uses `fetch` instead of Obsidian's `requestUrl` because `requestUrl` doesn't support the Responses API reliably
 
 ## Architecture guidelines
@@ -161,13 +167,21 @@ On plugin load, `migratePromptFolders()` runs before `ensureDefaultPrompts()`:
 - **Keep `main.ts` minimal**: Only plugin lifecycle and command registration. Delegate logic to modules.
 - **Immutability**: Always create new objects, never mutate existing ones (e.g., `{ ...this.settings, key: value }`).
 - **Small files**: 200-400 lines typical, 800 max.
-- **Obsidian patterns**: Use `this.register*` helpers for cleanup. Persist via `loadData()`/`saveData()`.
-- **No hidden network calls**: All API calls are user-initiated (submit button, quick action click, rewrite command).
+- **Obsidian patterns**: Use `this.register*` helpers for cleanup. Persist via `loadData()`/`saveData()` (settings) or plugin-dir JSON files (chain state).
+- **No hidden network calls**: All API calls are user-initiated.
 - **Error handling**: Catch at every level. Show `new Notice(message, duration)` for user feedback.
-- **CSS**: Use Obsidian CSS variables (`var(--text-accent)`, etc.) for theme compatibility. Use `.addClass`/`.removeClass` instead of `style.display` per linter rules.
-- **Linting**: The `eslint-plugin-obsidianmd` enforces sentence case for UI text, `requestUrl` over `fetch`, `.setHeading()` for settings headings, and no direct style assignments.
+- **CSS**: Use Obsidian CSS variables for theme compatibility. Use `.addClass`/`.removeClass` / `setCssProps` instead of direct `style.*` assignments per linter rules.
+- **Linting**: `eslint-plugin-obsidianmd` enforces sentence case for UI text, `requestUrl` over `fetch` (Responses API exempted), `.setHeading()` for settings headings, and no direct style assignments.
 
 ## Testing
+
+```bash
+npm test             # run vitest
+npm run build        # tsc -noEmit (includes tests) + esbuild bundle
+npm run lint         # eslint
+```
+
+Tests (`tests/`): `editor-ops`, `ai-client` (`parseResponse`, `CooApiError`), `prompts` (language tags, input builders), `chain` (chain-head storage), `settings` (locale + conflict utils). `editor-ops` tests use a mock Editor that faithfully implements `replaceRange`.
 
 ### Manual deployment
 ```bash

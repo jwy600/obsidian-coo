@@ -1,63 +1,91 @@
-import type {
-	BlockAction,
-	ResponseLanguage,
-	TranslateLanguage,
-} from "./types";
+import type { ResponseLanguage, TranslateLanguage } from "./types";
 import { LANGUAGE_MAP } from "./types";
 
 /**
- * Single developer prompt fallback with `<language></language>` placeholder.
- * For English, the tag is removed entirely.
- * For other languages, it is filled with a language directive.
- */
-export const DEVELOPER_PROMPT_FALLBACK = `You are a knowledgeable assistant that provides deep, thorough explanations.
-
-<language></language>
-<response_approach>
-- Start with a clear, direct answer or definition
-- Then explain the "why" and "how" behind it
-- Include relevant examples, edge cases, and practical implications
-- Connect to broader context when it aids understanding
-- Cover the topic completely — assume the user wants to truly understand, not just get a quick answer
-</response_approach>
-
-<structure>
-- Lead with the core concept (1-2 sentences)
-- Expand with supporting details and mechanisms
-- Add examples or analogies where helpful
-- Note important exceptions or nuances
-- Use headers (##) for distinct subtopics
-</structure>
-
-<formatting>
-- Use Markdown **only where semantically correct** (e.g., \`inline code\`, \`\`\`code fences\`\`\`, lists, tables)
-- Use backticks to format file, directory, function, and class names
-- Use $ for inline math and $$ for block math (Obsidian MathJax format). NEVER use \\( \\) or \\[ \\] delimiters.
-- NEVER use numbered lists (1, 2, 3). If sequence matters, use letters (a, b, c) instead
-</formatting>
-
-<avoid>
-- Repetition (don't restate the same point differently)
-- Filler phrases and unnecessary hedging
-- Artificial padding for simple topics
-</avoid>`;
-
-/**
- * Single block-action prompt (language-neutral).
- * Language directives are prepended at runtime.
+ * Block-action prompt (ported from coo-app-next).
+ * Covers translate, rewrite, and ask. The <language> tag is filled at runtime.
+ * The <scope> block is essential for response chaining: it tells the model to
+ * treat prior chained turns as background context and not echo them.
  */
 const BLOCK_ACTION_PROMPT = `You transform or answer questions about a given text block.
+
+<language></language>
+
+<scope>
+- The text inside <passage>...</passage> is the focus of the action
+- Treat any prior conversation turns (carried via response chaining) as background context — use them to interpret the passage, but do not quote or echo them in your output
+</scope>
+
+<transformations>
+For translate and rewrite:
+- Apply the action ONLY to the passage's text
+- Output plain text only — no markdown, no bullet points, no numbered lists, no headers
+- No preamble ("Here's the translation:", "Sure!", etc.) — start directly with the result
+- Keep responses focused and concise — typically similar length to the input
+- Match the tone of the original text
+</transformations>
+
+<ask>
+For ask, the passage is the context that motivated the question — not the thing to answer about. Answer the user's actual question.
+- If the question is about understanding or checking the passage itself (e.g. "what does this term mean?", "is this claim accurate?"), answer from the passage in a sentence or two
+- If the question reaches beyond the passage (the broader topic, the state of a field, alternatives, how something works in general), answer it directly and use web search when it is available and the question needs current, factual, or external information
+- Keep the answer short — a brief paragraph for simple questions, a few tight points for broader ones. Lead with the direct answer; add only what's needed to support it. No exhaustive writeups, no filler, no restating
+- No preamble — start directly with the answer
+- Use markdown structure (a short list, bold) only when it genuinely helps; skip it for short answers
+- Match the user's language
+</ask>`;
+
+/**
+ * Translate prompt (ported from coo-app-next).
+ * Translate is standalone (no chaining), so scope is simpler.
+ * The <translationlanguage> tag is filled at runtime.
+ */
+const BLOCK_ACTION_TRANSLATE_PROMPT = `You translate a given text block.
+
+<translationlanguage></translationlanguage>
+
+<scope>
+- Translate ONLY the text inside <passage>...</passage>
+</scope>
 
 <rules>
 - Output plain text only — no markdown, no bullet points, no numbered lists, no headers
 - No preamble ("Here's the translation:", "Sure!", etc.) — start directly with the result
-- Keep responses focused and concise — typically 1-3 sentences for questions, similar length to input for transformations
-- Match the tone of the original text
+- Preserve the tone and register of the original text
+</rules>`;
+
+/**
+ * Rewrite prompt (ported from coo-app-next).
+ * Revises a passage by applying the user's notes as edits.
+ * The <language> tag is filled at runtime.
+ */
+const REWRITE_PROMPT = `You revise a passage of Markdown according to the user's notes.
+
+<language></language>
+
+<rules>
+- Preserve the original Markdown formatting (paragraphs, headings, lists, code fences, math) unless a note explicitly asks you to change it
+- Apply each note as an edit to the relevant span — do not echo the notes back, do not add new ones
+- Output the revised passage only — no preamble, no explanation, no surrounding fences
+- Match the original tone, register, and language
+</rules>`;
+
+/**
+ * Registration prompt (ported from coo-app-next).
+ * Primes the model with the whole note so later asks can chain from it.
+ * No language tag — the acknowledgment language is not important (text is discarded).
+ */
+const REGISTER_DOC_PROMPT = `The user has shared a document. Store it in context — you'll be asked about it next.
+
+<rules>
+- Acknowledge in one short sentence that you've received it
+- Do not summarize or analyze the document yet — wait for the user's question
+- No preamble beyond that one sentence
 </rules>`;
 
 /**
  * Replace `<language></language>` tag in a template string.
- * - English: removes the entire `<language>...</language>` line (including any blank line it leaves)
+ * - English: removes the tag (and any blank line it leaves behind)
  * - Others: fills the tag with "Always respond in {full language name}."
  */
 export function replaceLanguageTag(
@@ -75,80 +103,83 @@ export function replaceLanguageTag(
 }
 
 /**
- * Prepend a language directive to a hardcoded prompt.
- * - English: returns prompt unchanged
- * - Others: prepends "Always respond in {full name}.\n\n"
+ * Replace `<translationlanguage></translationlanguage>` tag in a template string.
+ * - English: removes the tag
+ * - Others: fills the tag with "Translate into {language}."
  */
-export function prependLanguageDirective(
-	prompt: string,
-	lang: ResponseLanguage,
+export function replaceTranslationLanguageTag(
+	template: string,
+	lang: TranslateLanguage,
 ): string {
-	if (lang === "en") {
-		return prompt;
+	if (lang === "English") {
+		return template.replace(
+			/\n?<translationlanguage><\/translationlanguage>\n?/,
+			"\n",
+		);
 	}
-	const fullName = LANGUAGE_MAP[lang];
-	return `Always respond in ${fullName}.\n\n${prompt}`;
+	return template.replace(
+		"<translationlanguage></translationlanguage>",
+		`<translationlanguage>Translate into ${lang}.</translationlanguage>`,
+	);
 }
 
-/**
- * Get the block-action system prompt with language directive applied.
- * Used for all block actions: eli5, example, expand, ask, rewrite.
- */
+/** Block-action system prompt (for ask) with language applied. */
 export function getBlockActionSystemPrompt(lang: ResponseLanguage): string {
-	return prependLanguageDirective(BLOCK_ACTION_PROMPT, lang);
+	return replaceLanguageTag(BLOCK_ACTION_PROMPT, lang);
 }
 
-/**
- * Get the block-action system prompt with a specific translation language directive.
- * Used only for the translate action.
- */
+/** Translate system prompt with the translation target language applied. */
 export function getTranslateSystemPrompt(
 	translateLang: TranslateLanguage,
 ): string {
-	return `Always respond in ${translateLang}.\n\n${BLOCK_ACTION_PROMPT}`;
+	return replaceTranslationLanguageTag(BLOCK_ACTION_TRANSLATE_PROMPT, translateLang);
 }
 
-export function buildActionPrompt(
-	action: BlockAction,
-	blockText: string,
-	prompt?: string,
-	translateLanguage?: TranslateLanguage,
-	context?: string,
-): string {
-	const trimmedBlock = blockText.trim();
+/** Rewrite system prompt with language applied. */
+export function getRewriteSystemPrompt(lang: ResponseLanguage): string {
+	return replaceLanguageTag(REWRITE_PROMPT, lang);
+}
 
-	switch (action) {
-		case "translate": {
-			const language = translateLanguage ?? "Chinese";
-			return `Translate into ${language}:\n\n${trimmedBlock}`;
-		}
-		case "example": {
-			let result = `Give one concrete example of this:\n\n${trimmedBlock}`;
-			if (context) result += `\n\nDocument context:\n${context}`;
-			return result;
-		}
-		case "expand": {
-			let result = `Expand on this with more detail:\n\n${trimmedBlock}`;
-			if (context) result += `\n\nDocument context:\n${context}`;
-			return result;
-		}
-		case "eli5": {
-			let result = `Explain this like I'm five:\n\n${trimmedBlock}`;
-			if (context) result += `\n\nDocument context:\n${context}`;
-			return result;
-		}
-		case "rewrite": {
-			const highlightPrompt = prompt?.trim() ?? "";
-			return `Rewrite this text, incorporating the highlighted phrases naturally. If a phrase is in a different language, INSERT each highlighted phrase in parentheses immediately after the most relevant word/phrase in the text. Prioritize natural integration, but if no coherent or logical placement exists for a phrase, append it at the end of the text rather than forcing an awkward insertion. Phrases to incorporate: ${highlightPrompt}. Text: ${trimmedBlock}`;
-		}
-		case "ask": {
-			const trimmedPrompt = prompt?.trim() ?? "";
-			let result = `Text: "${trimmedBlock}"`;
-			if (context) result += `\n\nDocument context:\n${context}`;
-			result += `\n\nQuestion: ${trimmedPrompt}`;
-			return result;
-		}
-		default:
-			return "";
+/** Registration prompt (no language tag). */
+export function getRegisterDocumentPrompt(): string {
+	return REGISTER_DOC_PROMPT;
+}
+
+/**
+ * Build the Ask input: the paragraph as <passage>, the user's highlighted
+ * selection (if any) as the focal phrase, and the question.
+ * Chained context (prior Q&A) arrives server-side via previous_response_id,
+ * so it is NOT re-sent here.
+ */
+export function buildAskInput(
+	passage: string,
+	selection: string | undefined,
+	question: string,
+): string {
+	const trimmedPassage = passage.trim();
+	const trimmedQuestion = question.trim();
+	const passageBlock = `<passage>\n${trimmedPassage}\n</passage>`;
+	const highlight = selection?.trim()
+		? `\n\nThe user highlighted this part: "${selection.trim()}"`
+		: "";
+	return `${passageBlock}${highlight}\n\nQuestion: ${trimmedQuestion}`;
+}
+
+/**
+ * Build the Rewrite input: the passage and the accumulated notes.
+ * Rewrite is one-shot (does not chain).
+ */
+export function buildRewriteInput(passage: string, notes: string[]): string {
+	const trimmedPassage = passage.trim();
+	const passageBlock = `<passage>\n${trimmedPassage}\n</passage>`;
+	if (notes.length === 0) {
+		return passageBlock;
 	}
+	const noteBlock = notes.map((n) => `- ${n}`).join("\n");
+	return `${passageBlock}\n\n<notes>\n${noteBlock}\n</notes>`;
+}
+
+/** Build the Translate input: the selected text as <passage>. */
+export function buildTranslateInput(passage: string): string {
+	return `<passage>\n${passage.trim()}\n</passage>`;
 }

@@ -1,4 +1,4 @@
-export type ModelType = "gpt-5.2" | "gpt-5-mini";
+export type ModelType = "gpt-5.2" | "gpt-5-mini" | "gpt-5.5";
 
 export type ReasoningEffort = "none" | "low" | "medium" | "high";
 
@@ -11,14 +11,6 @@ export type TranslateLanguage =
 	| "Chinese"
 	| "Japanese";
 
-export type BlockAction =
-	| "translate"
-	| "example"
-	| "expand"
-	| "eli5"
-	| "ask"
-	| "rewrite";
-
 export interface CooSettings {
 	apiKey: string;
 	model: ModelType;
@@ -26,7 +18,6 @@ export interface CooSettings {
 	webSearchEnabled: boolean;
 	responseLanguage: ResponseLanguage;
 	translateLanguage: TranslateLanguage;
-	systemPromptFile: string;
 }
 
 /** Maps ResponseLanguage codes to full language names for prompt injection. */

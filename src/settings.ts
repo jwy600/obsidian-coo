@@ -5,7 +5,6 @@ import type {
 	TranslateLanguage,
 } from "./types";
 import { TRANSLATE_TO_RESPONSE_MAP } from "./types";
-import { listPromptFiles } from "./prompt-loader";
 import {
 	isLanguageConflict,
 	getDefaultTranslateLanguage,
@@ -20,7 +19,6 @@ export const DEFAULT_SETTINGS: CooSettings = {
 	webSearchEnabled: false,
 	responseLanguage: "en",
 	translateLanguage: "Chinese",
-	systemPromptFile: "knowledgeassistant.md",
 };
 
 /** All available translate language options. */
@@ -29,10 +27,10 @@ const ALL_TRANSLATE_OPTIONS: ReadonlyArray<{
 	label: string;
 }> = [
 	{ value: "English", label: "English" },
-	{ value: "Spanish", label: "Espa\u00f1ol" },
-	{ value: "French", label: "Fran\u00e7ais" },
-	{ value: "Chinese", label: "\u4e2d\u6587" },
-	{ value: "Japanese", label: "\u65e5\u672c\u8a9e" },
+	{ value: "Spanish", label: "Español" },
+	{ value: "French", label: "Français" },
+	{ value: "Chinese", label: "中文" },
+	{ value: "Japanese", label: "日本語" },
 ];
 
 export class CooSettingTab extends PluginSettingTab {
@@ -43,14 +41,9 @@ export class CooSettingTab extends PluginSettingTab {
 		this.plugin = plugin;
 	}
 
-	async display(): Promise<void> {
+	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
-
-		const promptFiles = await listPromptFiles(
-			this.app,
-			this.plugin.manifest.dir ?? "",
-		);
 
 		new Setting(containerEl)
 			// eslint-disable-next-line obsidianmd/ui/sentence-case -- "OpenAI API" is a proper noun
@@ -81,6 +74,8 @@ export class CooSettingTab extends PluginSettingTab {
 					.addOption("gpt-5.2", "GPT-5.2")
 					// eslint-disable-next-line obsidianmd/ui/sentence-case -- product names
 					.addOption("gpt-5-mini", "GPT-5 Mini")
+					// eslint-disable-next-line obsidianmd/ui/sentence-case -- product names
+					.addOption("gpt-5.5", "GPT-5.5")
 					.setValue(this.plugin.settings.model)
 					.onChange(async (value) => {
 						this.plugin.settings = {
@@ -94,7 +89,7 @@ export class CooSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Reasoning effort")
 			.setDesc(
-				"How much reasoning the model should use. Higher = slower but more thorough.",
+				"How much reasoning the model uses. Higher is slower but more thorough. Used for rewrite; ask skips reasoning for speed.",
 			)
 			.addDropdown((dropdown) =>
 				dropdown
@@ -116,7 +111,7 @@ export class CooSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Web search")
 			.setDesc(
-				"Allow the model to search the web for up-to-date information.",
+				"Let the model search the web when asking, for up-to-date information.",
 			)
 			.addToggle((toggle) =>
 				toggle
@@ -136,14 +131,10 @@ export class CooSettingTab extends PluginSettingTab {
 			.addDropdown((dropdown) =>
 				dropdown
 					.addOption("en", "English")
-					// eslint-disable-next-line obsidianmd/ui/sentence-case -- native language name
-					.addOption("es", "Espa\u00f1ol")
-					// eslint-disable-next-line obsidianmd/ui/sentence-case -- native language name
-					.addOption("fr", "Fran\u00e7ais")
-					// eslint-disable-next-line obsidianmd/ui/sentence-case -- native language name
-					.addOption("zh", "\u4e2d\u6587")
-					// eslint-disable-next-line obsidianmd/ui/sentence-case -- native language name
-					.addOption("ja", "\u65e5\u672c\u8a9e")
+					.addOption("es", "Español")
+					.addOption("fr", "Français")
+					.addOption("zh", "中文")
+					.addOption("ja", "日本語")
 					.setValue(this.plugin.settings.responseLanguage)
 					.onChange(async (value) => {
 						const newResponseLang =
@@ -168,7 +159,6 @@ export class CooSettingTab extends PluginSettingTab {
 							translateLanguage: newTranslateLang,
 						};
 						await this.plugin.saveSettings();
-						await this.plugin.reloadDeveloperPrompt();
 						// Re-render to update translate dropdown options
 						void this.display();
 					}),
@@ -201,28 +191,6 @@ export class CooSettingTab extends PluginSettingTab {
 								value as CooSettings["translateLanguage"],
 						};
 						await this.plugin.saveSettings();
-					});
-			});
-
-		new Setting(containerEl)
-			.setName("System prompt")
-			.setDesc(
-				"Choose a system prompt file for chat responses. " +
-					"Files are loaded from the prompts/ folder.",
-			)
-			.addDropdown((dropdown) => {
-				for (const file of promptFiles) {
-					dropdown.addOption(file, file);
-				}
-				dropdown
-					.setValue(this.plugin.settings.systemPromptFile)
-					.onChange(async (value) => {
-						this.plugin.settings = {
-							...this.plugin.settings,
-							systemPromptFile: value,
-						};
-						await this.plugin.saveSettings();
-						await this.plugin.reloadDeveloperPrompt();
 					});
 			});
 	}

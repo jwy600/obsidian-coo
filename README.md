@@ -4,33 +4,28 @@ coo makes AI contextual in Obsidian. Instead of treating LLMs as a separate plac
 
 ## Features
 
-### Ask
-
-Open the Ask modal from the command palette. Type any question, and the AI response is saved as a new note in your vault.
-
-![](https://github.com/jwy600/obsidian-coo/blob/d53575c11fe56e302f3c5348a8028cf9e651bb26/asset/ask.png)
-
 ### Discuss
 
-Select text in your editor and open the Discuss composer. Quick action buttons let you **Translate**, **Expand**, get **Examples**, or **ELI5** (Explain Like I'm 5) the selected text with one click — or type a custom question. **The AI response appears in the same textarea.**
+Select text in a paragraph and open the **Discuss** composer (command palette or right-click → *coo discuss*). A small composer opens over your note with the paragraph as context.
 
-![](https://github.com/jwy600/obsidian-coo/blob/d53575c11fe56e302f3c5348a8028cf9e651bb26/asset/discuss_ask.png)
+- **Ask** — type a question about the paragraph (your highlighted phrase is the focal point). The answer is saved as an invisible `%%note%%` below the paragraph. Follow-up questions **chain**: coo remembers the whole Q&A for the note, so each question builds on the last.
+- **Rewrite** — fold the gathered notes back into the paragraph. coo rewrites the paragraph incorporating the notes, then removes them. Fully undoable with Ctrl/Cmd+Z.
 
-![](https://github.com/jwy600/obsidian-coo/blob/d53575c11fe56e302f3c5348a8028cf9e651bb26/asset/discuss_answer.png)
+Answers and rewrites write straight into your note — the composer is just the command bar. Notes are `%%…%%` Obsidian comments: visible while you edit, invisible in reading mode.
 
-### Annotate
+### Translate
 
-Because the textarea is used for both input and output, its content is intentionally ephemeral. When you find something worth keeping, you can select text in the textarea and save it as a piece of annotation attached to the paragraph. 
+Select a word or phrase and run **coo: Translate** (command palette or right-click → *coo translate*). The translation is inserted inline, in parentheses, right after the original — so you keep the original text and see its translation next to it.
 
-![](https://github.com/jwy600/obsidian-coo/blob/d53575c11fe56e302f3c5348a8028cf9e651bb26/asset/discuss_highlight.png)
+```
+The phenomenon of entanglement (量子もつれ) is counterintuitive.
+```
 
-Each phrase is instantly saved as an invisible `%%annotation%%` comment below the source paragraph in your note. These annotations are invisible in Obsidian's reading mode but available for rewriting.
+One editor operation — Ctrl/Cmd+Z reverts it.
 
-### Rewrite
+### Re-register note
 
-Place your cursor in a paragraph that has annotations below it and run **coo: Rewrite** from either command palette or contextual menu (right click). The AI rewrites the paragraph incorporating your picked phrases — translation of a key term, a concrete example, a simpler explanation — then replaces the original text and removes the annotations. Fully undoable with Ctrl/Cmd+Z.
-
-![](https://github.com/jwy600/obsidian-coo/blob/d53575c11fe56e302f3c5348a8028cf9e651bb26/asset/rewrite.png)
+Because coo chains questions against a snapshot of your note, heavily editing a note can leave that snapshot stale. Run **coo: Re-register note** to refresh the snapshot and start a fresh chain.
 
 ## Installation
 
@@ -75,33 +70,15 @@ Reload Obsidian (Cmd+R or Ctrl+R) → Settings → Community Plugins → enable 
 | Setting              | Options                                          | Default                  | Description                                                                                                      |
 | -------------------- | ------------------------------------------------ | ------------------------ | ---------------------------------------------------------------------------------------------------------------- |
 | OpenAI API key       | —                                                | (empty)                  | Required. Your API key, stored locally                                                                           |
-| Model                | `gpt-5.2`, `gpt-5-mini`                         | `gpt-5.2`               | Which OpenAI model to use                                                                                        |
-| Reasoning effort     | `none`, `low`, `medium`, `high`                  | `none`                   | Controls depth of reasoning                                                                                      |
-| Web search           | on / off                                         | off                      | Let the model search the web                                                                                     |
+| Model                | `gpt-5.2`, `gpt-5-mini`, `gpt-5.5`              | `gpt-5.2`               | Which OpenAI model to use                                                                                        |
+| Reasoning effort     | `none`, `low`, `medium`, `high`                  | `none`                   | Depth of reasoning (applies to Rewrite; Ask skips it for speed)                                                  |
+| Web search           | on / off                                         | off                      | Let the model search the web during Ask                                                                          |
 | Response language    | English, Español, Français, 中文, 日本語         | Auto-detected from Obsidian locale | Language for AI responses. Applied as a runtime directive to all prompts                                |
 | Translation language | English, Español, Français, 中文, 日本語         | Chinese                  | Target language for the Translate action. Cannot match response language                                          |
-| System prompt        | `knowledgeassistant.md`, `atomic.md`, ...        | `knowledgeassistant.md`  | Custom `.md` prompt file from the `prompts/` folder in the plugin directory. Supports `<language>` tag for i18n   |
 
-## Custom system prompts
+## How chaining works
 
-The **System prompt** setting controls the persona used by the **Ask** command. coo ships with two defaults — `knowledgeassistant.md` (thorough explanations) and `atomic.md` (concise, atomic-note style) — but you can add your own.
-
-1. Open your vault's plugin folder: `<Your Vault>/.obsidian/plugins/obsidian-coo/prompts/`
-2. Create a new `.md` file (e.g. `socratic.md`) and write your system prompt inside it
-3. Go to **Settings → coo → System prompt** and select your file from the dropdown
-
-Your custom prompts can include a `<language></language>` tag. coo will automatically fill it with a language directive matching your **Response language** setting (or remove it entirely for English), so a single prompt file works across all languages.
-
-Example:
-
-```markdown
-You are a Socratic tutor who answers questions with guiding questions.
-
-<language></language>
-
-Never give direct answers. Instead, lead the student to discover the answer
-through a series of progressively more specific questions.
-```
+When you first Ask about a note, coo registers the whole note with OpenAI (`store: true`) as the conversation root, and stores the returned response id for that note. Each subsequent Ask chains from the previous one, so the model remembers your full Q&A history for the note. Only Ask chains — Translate and Rewrite are standalone. If OpenAI evicts the stored conversation (after some weeks), coo automatically re-registers and continues.
 
 ## Web app deployment
 

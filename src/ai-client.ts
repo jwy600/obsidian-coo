@@ -1,4 +1,5 @@
-import type { CooSettings } from "./types";
+import type { CooSettings, ReasoningEffort } from "./types";
+import { getRegisterDocumentPrompt } from "./prompts";
 
 const API_URL = "https://api.openai.com/v1/responses";
 
@@ -6,24 +7,61 @@ export interface ChatCompletionParams {
 	settings: CooSettings;
 	systemPrompt: string;
 	userPrompt: string;
+	/** Chain head from a prior stored response. */
+	previousResponseId?: string;
+	/** Whether OpenAI stores the response (default true — needed for chaining). */
+	store?: boolean;
+	/** Override reasoning effort; defaults to settings.reasoningEffort. */
+	reasoningEffort?: ReasoningEffort;
+	/** Override web search; defaults to settings.webSearchEnabled. */
+	webSearchEnabled?: boolean;
+}
+
+export interface ResponseResult {
+	text: string;
+	responseId: string;
+}
+
+/** API error carrying the HTTP status, so callers can react (e.g. expired id). */
+export class CooApiError extends Error {
+	status: number;
+	constructor(status: number, message: string) {
+		super(message);
+		this.name = "CooApiError";
+		this.status = status;
+	}
+}
+
+function resolveReasoning(params: ChatCompletionParams): ReasoningEffort {
+	return params.reasoningEffort ?? params.settings.reasoningEffort;
+}
+
+function resolveWebSearch(params: ChatCompletionParams): boolean {
+	return params.webSearchEnabled ?? params.settings.webSearchEnabled;
 }
 
 function buildRequestBody(
 	params: ChatCompletionParams,
 ): Record<string, unknown> {
-	const { settings, systemPrompt, userPrompt } = params;
+	const { settings, systemPrompt, userPrompt, previousResponseId, store = true } = params;
 
 	const body: Record<string, unknown> = {
 		model: settings.model,
 		input: userPrompt,
 		instructions: systemPrompt,
+		store,
 	};
 
-	if (settings.reasoningEffort !== "none") {
-		body.reasoning = { effort: settings.reasoningEffort };
+	if (previousResponseId) {
+		body.previous_response_id = previousResponseId;
 	}
 
-	if (settings.webSearchEnabled) {
+	const reasoning = resolveReasoning(params);
+	if (reasoning !== "none") {
+		body.reasoning = { effort: reasoning };
+	}
+
+	if (resolveWebSearch(params)) {
 		body.tools = [{ type: "web_search" }];
 	}
 
@@ -59,14 +97,21 @@ function mapHttpError(status: number, body: string): string {
 	}
 }
 
-export function extractResponseText(responseText: string): string {
+/**
+ * Parse a Responses API body into { text, responseId }.
+ * `text` is "" if the model returned no output (caller decides whether that's an error).
+ */
+export function parseResponse(responseText: string): ResponseResult {
 	const data = JSON.parse(responseText) as {
+		id?: string;
 		output_text?: string;
 		output?: Array<{
 			type?: string;
 			content?: Array<{ type?: string; text?: string }>;
 		}>;
 	};
+
+	const responseId = data.id ?? "";
 
 	// Try top-level output_text first, then extract from output array
 	let text = data.output_text?.trim();
@@ -84,18 +129,14 @@ export function extractResponseText(responseText: string): string {
 		}
 	}
 
-	if (!text) {
-		throw new Error("The assistant didn't return any text.");
-	}
-
-	return text;
+	return { text: text ?? "", responseId };
 }
 
 async function apiFetch(
 	apiKey: string,
 	body: Record<string, unknown>,
 ): Promise<Response> {
-	// eslint-disable-next-line no-restricted-globals -- requestUrl doesn't support Responses API
+	// eslint-disable-next-line no-restricted-globals -- requestUrl doesn't support the Responses API reliably
 	return fetch(API_URL, {
 		method: "POST",
 		headers: {
@@ -106,12 +147,8 @@ async function apiFetch(
 	});
 }
 
-/**
- * Non-streaming response via Responses API.
- */
-export async function chatCompletion(
-	params: ChatCompletionParams,
-): Promise<string> {
+/** Low-level call: returns { text, responseId } without throwing on empty text. */
+async function callApi(params: ChatCompletionParams): Promise<ResponseResult> {
 	if (!params.settings.apiKey) {
 		throw new Error(
 			"API key not configured. Please set it in Coo settings.",
@@ -123,8 +160,50 @@ export async function chatCompletion(
 	const responseText = await response.text();
 
 	if (!response.ok) {
-		throw new Error(mapHttpError(response.status, responseText));
+		throw new CooApiError(
+			response.status,
+			mapHttpError(response.status, responseText),
+		);
 	}
 
-	return extractResponseText(responseText);
+	return parseResponse(responseText);
+}
+
+/**
+ * Non-streaming response via Responses API.
+ * Throws if the model returns no text.
+ */
+export async function chatCompletion(
+	params: ChatCompletionParams,
+): Promise<ResponseResult> {
+	const result = await callApi(params);
+	if (!result.text) {
+		throw new Error("The assistant didn't return any text.");
+	}
+	return result;
+}
+
+/**
+ * Register a note as the conversation root.
+ * Sends the full note text with the registration prompt (store: true) and
+ * returns the response_id (R0) to chain future asks from. The acknowledgment
+ * text is discarded — only the id matters.
+ */
+export async function registerNote(
+	settings: CooSettings,
+	noteText: string,
+): Promise<string> {
+	const result = await callApi({
+		settings,
+		systemPrompt: getRegisterDocumentPrompt(),
+		userPrompt: noteText,
+		store: true,
+		reasoningEffort: "none",
+		webSearchEnabled: false,
+	});
+
+	if (!result.responseId) {
+		throw new Error("Registration failed: no response id returned.");
+	}
+	return result.responseId;
 }
