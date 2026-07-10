@@ -90,9 +90,10 @@ Output: `main.js` + `manifest.json` + `styles.css` at repo root (loaded by Obsid
 ## Two features + chaining
 
 ### Discuss (`coo-discuss`)
-Select text in a paragraph → command palette or right-click → composer modal (passage preview + question input + Ask + Rewrite). **The modal is the command bar; the note is the canvas** — AI output writes into the note, not the modal.
+Select text in a paragraph → command palette or right-click → composer modal (passage preview + question input + Ask + Rewrite). **The modal is the command bar; the note is the canvas** — AI output writes into the note, not the modal. With **nothing selected**, the whole document becomes the scope instead (whole-document mode).
 
 - **Ask** (selection-aware): the highlighted phrase is the focal point of the question. The answer is appended to the note as a collapsed `[!coo]` callout below the paragraph (question as title, answer as body — markdown renders when expanded). Asks **chain** via `previous_response_id` (the note is registered as the conversation root on the first Ask).
+- **Whole-document mode** (no selection): the entire note is the scope. Ask answers append as collapsed `[!coo]` callouts at the **bottom of the note** and chain like any other Ask. Rewrite is hidden in this mode (a full-document rewrite is destructive). An empty note shows "The document is empty."
 - **Rewrite**: folds the `%%…%%` notes into the paragraph and removes them. One-shot — does not chain.
 - Undo everywhere is native Ctrl+Z (each action is one editor op).
 
@@ -113,7 +114,7 @@ Each note has a conversation root. On the first Ask, the whole note is sent to O
 
 ## Note format
 
-Each Ask answer is stored as a collapsed Obsidian callout below the paragraph — the question is the callout title (visible collapsed as `▶ What is X?`), the answer is the body (markdown renders when expanded):
+Each Ask answer is stored as a collapsed Obsidian callout — below the paragraph, or at the **bottom of the note** in whole-document mode — the question is the callout title (visible collapsed as `▶ What is X?`), the answer is the body (markdown renders when expanded):
 
 ```markdown
 Some paragraph text that the user discussed with AI.

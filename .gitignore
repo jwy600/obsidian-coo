@@ -27,3 +27,6 @@ everything-claude-code
 
 # materials
 obsidian.mp4
+
+# personal deploy script (machine-specific iCloud path, not for the repo)
+deploy.sh

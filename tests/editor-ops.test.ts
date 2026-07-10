@@ -338,6 +338,35 @@ describe("appendCallout", () => {
 		appendCallout(asEditor(editor), 0, "Q?", "   ");
 		expect(editor.lines).toEqual(["P"]);
 	});
+
+	it("appends at the bottom when paragraphEndLine is the last line (whole-doc mode)", () => {
+		const editor = new MockEditor({ lines: ["Line 1", "Line 2"] });
+		appendCallout(asEditor(editor), 1, "Summarize?", "The summary.");
+		expect(editor.lines).toEqual([
+			"Line 1",
+			"Line 2",
+			"",
+			"> [!coo]- Summarize?",
+			"> The summary.",
+		]);
+	});
+
+	it("stacks a follow-up callout below the first at the bottom (whole-doc chaining)", () => {
+		const editor = new MockEditor({
+			lines: ["Line 1", "Line 2", "", "> [!coo]- Q1?", "> a1"],
+		});
+		appendCallout(asEditor(editor), 1, "Q2?", "a2");
+		expect(editor.lines).toEqual([
+			"Line 1",
+			"Line 2",
+			"",
+			"> [!coo]- Q1?",
+			"> a1",
+			"",
+			"> [!coo]- Q2?",
+			"> a2",
+		]);
+	});
 });
 
 describe("replaceParagraphAndRemoveCallouts", () => {

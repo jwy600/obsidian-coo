@@ -38,6 +38,7 @@ export class CooComposer extends Modal {
 	private notePath: string;
 	private selectedText: string;
 	private bounds: ParagraphBounds;
+	private wholeDoc: boolean;
 
 	private inputEl: HTMLTextAreaElement;
 	private askBtn: HTMLButtonElement;
@@ -52,6 +53,7 @@ export class CooComposer extends Modal {
 		notePath: string,
 		selectedText: string,
 		bounds: ParagraphBounds,
+		wholeDoc: boolean,
 	) {
 		super(app);
 		this.settings = settings;
@@ -60,16 +62,27 @@ export class CooComposer extends Modal {
 		this.notePath = notePath;
 		this.selectedText = selectedText;
 		this.bounds = bounds;
+		this.wholeDoc = wholeDoc;
 	}
 
 	onOpen(): void {
 		const { contentEl } = this;
 		contentEl.addClass("coo-composer-modal");
+		if (this.wholeDoc) contentEl.addClass("is-whole-doc");
 
 		// eslint-disable-next-line obsidianmd/ui/sentence-case -- brand label
 		contentEl.createEl("h3", { text: "coo discuss" });
 
-		// Passage preview (the paragraph under discussion)
+		// Whole-document mode: signal it clearly so the truncated preview below
+		// isn't mistaken for a single paragraph.
+		if (this.wholeDoc) {
+			contentEl.createDiv({
+				cls: "coo-whole-doc-hint",
+				text: "Asking about the whole document",
+			});
+		}
+
+		// Passage preview (the paragraph under discussion, or the whole note)
 		const preview = contentEl.createDiv({ cls: "coo-selection-preview" });
 		const passage = getParagraphText(
 			this.editor,
@@ -82,7 +95,12 @@ export class CooComposer extends Modal {
 
 		// Question input
 		this.inputEl = contentEl.createEl("textarea", {
-			attr: { placeholder: "Ask a question about this paragraph...", rows: "2" },
+			attr: {
+				placeholder: this.wholeDoc
+					? "Ask a question about this document..."
+					: "Ask a question about this paragraph...",
+				rows: "2",
+			},
 		});
 		this.inputEl.addClass("coo-composer-input");
 
@@ -104,6 +122,9 @@ export class CooComposer extends Modal {
 		this.rewriteBtn.addEventListener("click", () => {
 			void this.handleRewrite();
 		});
+		// Rewrite folds a single paragraph — not meaningful (and destructive) for
+		// the whole document, so it's Ask-only in whole-doc mode.
+		if (this.wholeDoc) this.rewriteBtn.hide();
 
 		this.askBtn = this.toolbar.createEl("button", { text: "Ask" });
 		this.askBtn.addClass("coo-ask-btn");
@@ -180,6 +201,9 @@ export class CooComposer extends Modal {
 	}
 
 	private async handleRewrite(): Promise<void> {
+		// Defensive — the button is hidden in whole-doc mode.
+		if (this.wholeDoc) return;
+
 		const notes = getCalloutNotes(this.editor, this.bounds.endLine);
 		if (notes.length === 0) {
 			new Notice("No notes yet. Ask a question first.");

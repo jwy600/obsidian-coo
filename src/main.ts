@@ -96,21 +96,37 @@ export default class CooPlugin extends Plugin {
 	private openDiscuss(editor: Editor): void {
 		if (!this.requireApiKey()) return;
 
+		const file = this.app.workspace.getActiveFile();
+		if (!file) {
+			new Notice("Open a note first.");
+			return;
+		}
+
 		const ctx = getSelectedTextWithContext(editor);
+
+		// No selection → discuss the whole document; the answer lands at the
+		// bottom. (Selection path stays as-is below.)
 		if (!ctx) {
-			new Notice("Select some text first.");
+			if (!editor.getValue().trim()) {
+				new Notice("The document is empty.");
+				return;
+			}
+			new CooComposer(
+				this.app,
+				this.settings,
+				editor,
+				this.manifest.dir ?? "",
+				file.path,
+				"",
+				{ startLine: 0, endLine: Math.max(0, editor.lineCount() - 1) },
+				true,
+			).open();
 			return;
 		}
 
 		const bounds = findSelectionSpan(editor, ctx.from, ctx.to);
 		if (!bounds) {
 			new Notice("Select text in a paragraph.");
-			return;
-		}
-
-		const file = this.app.workspace.getActiveFile();
-		if (!file) {
-			new Notice("Open a note first.");
 			return;
 		}
 
@@ -122,6 +138,7 @@ export default class CooPlugin extends Plugin {
 			file.path,
 			ctx.selectedText,
 			bounds,
+			false,
 		).open();
 	}
 

@@ -67,6 +67,13 @@
 	white-space: pre-wrap;
 }
 
+.coo-whole-doc-hint {
+	margin-bottom: 6px;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	font-style: italic;
+}
+
 /* ---- Question input ---- */
 
 .coo-composer-input {
@@ -101,6 +108,11 @@
 	justify-content: space-between;
 	padding: 6px 0;
 	flex-shrink: 0;
+}
+
+/* Whole-doc mode hides Rewrite; keep Ask on the right edge on its own. */
+.coo-composer-modal.is-whole-doc .coo-input-toolbar {
+	justify-content: flex-end;
 }
 
 /* ---- Rewrite button (secondary) ---- */
