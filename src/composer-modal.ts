@@ -256,12 +256,13 @@ export class CooComposer extends Modal {
 				this.settings.responseLanguage,
 			);
 
-			// Rewrite is one-shot: no chaining, no web search, reasoning per setting.
+			// Rewrite is one-shot: no chaining, no web search, reasoning off (like Translate).
 			const result = await chatCompletion({
 				settings: this.settings,
 				systemPrompt,
 				userPrompt,
 				store: false,
+				reasoningEffort: "none",
 				webSearchEnabled: false,
 			});
 

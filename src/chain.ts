@@ -120,7 +120,7 @@ export async function askChained(params: AskChainedParams): Promise<ResponseResu
 		systemPrompt,
 		userPrompt,
 		previousResponseId: head,
-		// Reasoning + web search follow the user's settings (like Rewrite).
+		// Reasoning + web search follow the user's settings (Ask only — Rewrite/Translate are pinned off).
 		webSearchEnabled: settings.webSearchEnabled,
 	};
 
