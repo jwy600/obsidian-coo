@@ -6,8 +6,11 @@ import {
 	extractMarkdownPrefix,
 	getParagraphText,
 	findCalloutBlocks,
-	getCalloutNotes,
+	findCalloutContaining,
+	getCalloutQaPairs,
+	getCalloutBody,
 	appendCallout,
+	appendCalloutAfter,
 	replaceParagraphAndRemoveCallouts,
 	insertTranslationAfter,
 } from "../src/editor-ops";
@@ -255,35 +258,44 @@ describe("findCalloutBlocks", () => {
 	});
 });
 
-describe("getCalloutNotes", () => {
-	it("returns the body (answer) of each callout, skipping the title", () => {
+describe("getCalloutQaPairs", () => {
+	it("returns the question (title) and answer (body) of each callout", () => {
 		const editor = new MockEditor({
 			lines: ["P", "", "> [!coo]- What is X?", "> The answer with **markdown**."],
 		});
-		expect(getCalloutNotes(asEditor(editor), 0)).toEqual([
-			"The answer with **markdown**.",
+		expect(getCalloutQaPairs(asEditor(editor), 0)).toEqual([
+			{ question: "What is X?", answer: "The answer with **markdown**." },
 		]);
 	});
 
-	it("joins multi-line bodies", () => {
+	it("strips the callout prefix (and extra spaces) from the question", () => {
+		const editor = new MockEditor({
+			lines: ["P", "", "> [!coo]-  Why?", "> because"],
+		});
+		expect(getCalloutQaPairs(asEditor(editor), 0)).toEqual([
+			{ question: "Why?", answer: "because" },
+		]);
+	});
+
+	it("joins multi-line answers", () => {
 		const editor = new MockEditor({
 			lines: ["P", "", "> [!coo]- Q?", "> line one.", "> line two."],
 		});
-		expect(getCalloutNotes(asEditor(editor), 0)).toEqual([
-			"line one.\nline two.",
+		expect(getCalloutQaPairs(asEditor(editor), 0)).toEqual([
+			{ question: "Q?", answer: "line one.\nline two." },
 		]);
 	});
 
 	it("returns empty when there are no callouts", () => {
 		const editor = new MockEditor({ lines: ["P"] });
-		expect(getCalloutNotes(asEditor(editor), 0)).toEqual([]);
+		expect(getCalloutQaPairs(asEditor(editor), 0)).toEqual([]);
 	});
 
 	it("skips empty bodies", () => {
 		const editor = new MockEditor({
 			lines: ["P", "", "> [!coo]- Q?", ">"],
 		});
-		expect(getCalloutNotes(asEditor(editor), 0)).toEqual([]);
+		expect(getCalloutQaPairs(asEditor(editor), 0)).toEqual([]);
 	});
 });
 
@@ -366,6 +378,149 @@ describe("appendCallout", () => {
 			"> [!coo]- Q2?",
 			"> a2",
 		]);
+	});
+});
+
+describe("findCalloutContaining", () => {
+	it("finds the callout whose body contains the position", () => {
+		const editor = new MockEditor({
+			lines: ["P", "", "> [!coo]- Q?", "> the answer mentions Y"],
+		});
+		expect(findCalloutContaining(asEditor(editor), { line: 3, ch: 5 })).toEqual({
+			startLine: 2,
+			endLine: 3,
+		});
+	});
+
+	it("finds the containing callout in a stack", () => {
+		const editor = new MockEditor({
+			lines: [
+				"P",
+				"",
+				"> [!coo]- Q1?",
+				"> a1",
+				"",
+				"> [!coo]- Q2?",
+				"> a2",
+			],
+		});
+		expect(findCalloutContaining(asEditor(editor), { line: 6, ch: 2 })).toEqual({
+			startLine: 5,
+			endLine: 6,
+		});
+	});
+
+	it("finds the callout for a position in a multi-line body", () => {
+		const editor = new MockEditor({
+			lines: ["P", "", "> [!coo]- Q?", "> line one.", "> line two."],
+		});
+		expect(findCalloutContaining(asEditor(editor), { line: 4, ch: 0 })).toEqual({
+			startLine: 2,
+			endLine: 4,
+		});
+	});
+
+	it("returns null when the position is on the title line", () => {
+		const editor = new MockEditor({
+			lines: ["P", "", "> [!coo]- Q?", "> a"],
+		});
+		expect(findCalloutContaining(asEditor(editor), { line: 2, ch: 3 })).toBeNull();
+	});
+
+	it("returns null for a non-blockquote line", () => {
+		const editor = new MockEditor({ lines: ["P", "", "> [!coo]- Q?", "> a"] });
+		expect(findCalloutContaining(asEditor(editor), { line: 0, ch: 0 })).toBeNull();
+	});
+
+	it("returns null inside a non-coo callout", () => {
+		const editor = new MockEditor({
+			lines: ["P", "", "> [!note]- other", "> body"],
+		});
+		expect(findCalloutContaining(asEditor(editor), { line: 3, ch: 0 })).toBeNull();
+	});
+
+	it("returns null for a blockquote line with no preceding coo start", () => {
+		const editor = new MockEditor({ lines: ["> loose quote", "> more"] });
+		expect(findCalloutContaining(asEditor(editor), { line: 1, ch: 0 })).toBeNull();
+	});
+});
+
+describe("getCalloutBody", () => {
+	it("returns the body of a single callout block", () => {
+		const editor = new MockEditor({
+			lines: ["P", "", "> [!coo]- Q?", "> the answer"],
+		});
+		expect(getCalloutBody(asEditor(editor), { startLine: 2, endLine: 3 })).toBe(
+			"the answer",
+		);
+	});
+
+	it("joins a multi-line body and strips the > prefix", () => {
+		const editor = new MockEditor({
+			lines: ["P", "", "> [!coo]- Q?", "> line one.", "> line two."],
+		});
+		expect(getCalloutBody(asEditor(editor), { startLine: 2, endLine: 4 })).toBe(
+			"line one.\nline two.",
+		);
+	});
+
+	it("returns empty string for a body-less callout", () => {
+		const editor = new MockEditor({ lines: ["> [!coo]- Q?"] });
+		expect(getCalloutBody(asEditor(editor), { startLine: 0, endLine: 0 })).toBe("");
+	});
+});
+
+describe("appendCalloutAfter", () => {
+	it("stacks a new callout immediately after the drilled callout (mid-stack)", () => {
+		const editor = new MockEditor({
+			lines: [
+				"P",
+				"",
+				"> [!coo]- Q1?",
+				"> a1",
+				"",
+				"> [!coo]- Q2?",
+				"> a2",
+			],
+		});
+		appendCalloutAfter(asEditor(editor), 3, "Q3?", "a3");
+		expect(editor.lines).toEqual([
+			"P",
+			"",
+			"> [!coo]- Q1?",
+			"> a1",
+			"",
+			"> [!coo]- Q3?",
+			"> a3",
+			"",
+			"> [!coo]- Q2?",
+			"> a2",
+		]);
+	});
+
+	it("appends after the last callout when drilling the final one", () => {
+		const editor = new MockEditor({
+			lines: ["P", "", "> [!coo]- Q1?", "> a1", "", "> [!coo]- Q2?", "> a2"],
+		});
+		appendCalloutAfter(asEditor(editor), 6, "Q3?", "a3");
+		expect(editor.lines).toEqual([
+			"P",
+			"",
+			"> [!coo]- Q1?",
+			"> a1",
+			"",
+			"> [!coo]- Q2?",
+			"> a2",
+			"",
+			"> [!coo]- Q3?",
+			"> a3",
+		]);
+	});
+
+	it("ignores a whitespace-only answer", () => {
+		const editor = new MockEditor({ lines: ["P", "", "> [!coo]- Q?", "> a"] });
+		appendCalloutAfter(asEditor(editor), 3, "Q2?", "   ");
+		expect(editor.lines).toEqual(["P", "", "> [!coo]- Q?", "> a"]);
 	});
 });
 

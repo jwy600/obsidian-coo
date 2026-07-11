@@ -7,14 +7,18 @@ import {
 	getRewriteSystemPrompt,
 	buildAskInput,
 	buildRewriteInput,
+	parseMinorTag,
 } from "./prompts";
 import {
 	getParagraphText,
 	extractMarkdownPrefix,
-	getCalloutNotes,
+	getCalloutQaPairs,
 	findCalloutBlocks,
 	appendCallout,
+	appendCalloutAfter,
+	getCalloutBody,
 	replaceParagraphAndRemoveCallouts,
+	type CalloutBlock,
 } from "./editor-ops";
 
 interface ParagraphBounds {
@@ -39,6 +43,7 @@ export class CooComposer extends Modal {
 	private selectedText: string;
 	private bounds: ParagraphBounds;
 	private wholeDoc: boolean;
+	private drillTarget: CalloutBlock | null;
 
 	private inputEl: HTMLTextAreaElement;
 	private askBtn: HTMLButtonElement;
@@ -54,6 +59,7 @@ export class CooComposer extends Modal {
 		selectedText: string,
 		bounds: ParagraphBounds,
 		wholeDoc: boolean,
+		drillTarget: CalloutBlock | null,
 	) {
 		super(app);
 		this.settings = settings;
@@ -63,6 +69,7 @@ export class CooComposer extends Modal {
 		this.selectedText = selectedText;
 		this.bounds = bounds;
 		this.wholeDoc = wholeDoc;
+		this.drillTarget = drillTarget;
 	}
 
 	onOpen(): void {
@@ -82,13 +89,21 @@ export class CooComposer extends Modal {
 			});
 		}
 
-		// Passage preview (the paragraph under discussion, or the whole note)
+		// Drill-down mode: the selection sits inside an existing answer callout,
+		// so the preview below is that answer, not a paragraph.
+		if (this.drillTarget) {
+			contentEl.createDiv({
+				cls: "coo-whole-doc-hint",
+				text: "Asking about this answer",
+			});
+		}
+
+		// Passage preview: the answer body when drilling, else the paragraph (or
+		// the whole note in whole-doc mode, where bounds span the document).
 		const preview = contentEl.createDiv({ cls: "coo-selection-preview" });
-		const passage = getParagraphText(
-			this.editor,
-			this.bounds.startLine,
-			this.bounds.endLine,
-		);
+		const passage = this.drillTarget
+			? getCalloutBody(this.editor, this.drillTarget)
+			: getParagraphText(this.editor, this.bounds.startLine, this.bounds.endLine);
 		preview.setText(
 			passage.length > 300 ? passage.slice(0, 300) + "..." : passage,
 		);
@@ -98,7 +113,9 @@ export class CooComposer extends Modal {
 			attr: {
 				placeholder: this.wholeDoc
 					? "Ask a question about this document..."
-					: "Ask a question about this paragraph...",
+					: this.drillTarget
+						? "Ask a question about this answer..."
+						: "Ask a question about this paragraph...",
 				rows: "2",
 			},
 		});
@@ -123,8 +140,8 @@ export class CooComposer extends Modal {
 			void this.handleRewrite();
 		});
 		// Rewrite folds a single paragraph — not meaningful (and destructive) for
-		// the whole document, so it's Ask-only in whole-doc mode.
-		if (this.wholeDoc) this.rewriteBtn.hide();
+		// the whole document, and not applicable when drilling into an answer.
+		if (this.wholeDoc || this.drillTarget) this.rewriteBtn.hide();
 
 		this.askBtn = this.toolbar.createEl("button", { text: "Ask" });
 		this.askBtn.addClass("coo-ask-btn");
@@ -165,11 +182,13 @@ export class CooComposer extends Modal {
 		this.setLoading(true, "ask");
 
 		try {
-			const passage = getParagraphText(
-				this.editor,
-				this.bounds.startLine,
-				this.bounds.endLine,
-			);
+			const passage = this.drillTarget
+				? getCalloutBody(this.editor, this.drillTarget)
+				: getParagraphText(
+						this.editor,
+						this.bounds.startLine,
+						this.bounds.endLine,
+					);
 			const userPrompt = buildAskInput(passage, this.selectedText, question);
 			const systemPrompt = getBlockActionSystemPrompt(
 				this.settings.responseLanguage,
@@ -185,11 +204,23 @@ export class CooComposer extends Modal {
 				userPrompt,
 			});
 
-			// Answer writes straight into the note as a collapsed callout
-			// (question as title, answer as body — markdown renders).
-			appendCallout(this.editor, this.bounds.endLine, question, result.text);
+			// A skippable-concept answer begins with **Minor** —; lift that flag
+			// into the callout title (visible when collapsed) and keep the body
+			// clean. Title/body are otherwise unchanged.
+			const { isMinor, body } = parseMinorTag(result.text);
+			const title = isMinor ? `[Minor] ${question}` : question;
 
-			this.inputEl.value = "";
+			// Answer writes straight into the note as a collapsed callout (title =
+			// the question, optionally prefixed with [Minor]; body = the answer,
+			// markdown renders). When drilling, the new answer stacks right under
+			// the answer it's about.
+			if (this.drillTarget) {
+				appendCalloutAfter(this.editor, this.drillTarget.endLine, title, body);
+			} else {
+				appendCallout(this.editor, this.bounds.endLine, title, body);
+			}
+
+			this.close();
 			new Notice("Added note.", 2000);
 		} catch (err) {
 			const message =
@@ -201,10 +232,10 @@ export class CooComposer extends Modal {
 	}
 
 	private async handleRewrite(): Promise<void> {
-		// Defensive — the button is hidden in whole-doc mode.
-		if (this.wholeDoc) return;
+		// Defensive — the button is hidden in whole-doc mode and drill mode.
+		if (this.wholeDoc || this.drillTarget) return;
 
-		const notes = getCalloutNotes(this.editor, this.bounds.endLine);
+		const notes = getCalloutQaPairs(this.editor, this.bounds.endLine);
 		if (notes.length === 0) {
 			new Notice("No notes yet. Ask a question first.");
 			return;

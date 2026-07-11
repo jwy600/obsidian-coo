@@ -9,6 +9,7 @@ import {
 	buildAskInput,
 	buildRewriteInput,
 	buildTranslateInput,
+	parseMinorTag,
 } from "../src/prompts";
 
 describe("replaceLanguageTag", () => {
@@ -121,18 +122,23 @@ describe("getRegisterDocumentPrompt", () => {
 describe("buildAskInput", () => {
 	const passage = "  The quick brown fox jumps.  ";
 
-	it("includes passage and question without a selection", () => {
+	it("leads with the preamble and question, passage last (no selection)", () => {
 		const result = buildAskInput(passage, undefined, "What?");
+		expect(result).toContain("Answer this question about the passage.");
+		expect(result).toContain("Question: What?");
 		expect(result).toContain("<passage>");
 		expect(result).toContain("The quick brown fox jumps.");
-		expect(result).toContain("Question: What?");
 		expect(result).not.toContain("highlighted");
+		// Question framing comes before the passage (matches coo-app-next).
+		expect(result.indexOf("Question:")).toBeLessThan(result.indexOf("<passage>"));
 	});
 
-	it("includes the highlighted selection when provided", () => {
+	it("appends the highlighted selection after the passage", () => {
 		const result = buildAskInput(passage, "brown fox", "What?");
 		expect(result).toContain('The user highlighted this part: "brown fox"');
 		expect(result).toContain("Question: What?");
+		// Highlight comes after the passage.
+		expect(result.indexOf("<passage>")).toBeLessThan(result.indexOf("highlighted"));
 	});
 
 	it("ignores a blank selection", () => {
@@ -146,16 +152,57 @@ describe("buildAskInput", () => {
 	});
 });
 
+describe("parseMinorTag", () => {
+	it("detects and strips a bold Minor prefix with em-dash", () => {
+		const { isMinor, body } = parseMinorTag("**Minor** — GCC is a C compiler.");
+		expect(isMinor).toBe(true);
+		expect(body).toBe("GCC is a C compiler.");
+	});
+
+	it("detects a plain 'Minor:' prefix", () => {
+		const { isMinor, body } = parseMinorTag("Minor: a passing example.");
+		expect(isMinor).toBe(true);
+		expect(body).toBe("a passing example.");
+	});
+
+	it("is case-insensitive", () => {
+		expect(parseMinorTag("**minor** — foo").isMinor).toBe(true);
+	});
+
+	it("returns the text unchanged when there is no Minor tag", () => {
+		const { isMinor, body } = parseMinorTag("表达力 means expressivity…");
+		expect(isMinor).toBe(false);
+		expect(body).toBe("表达力 means expressivity…");
+	});
+
+	it("does not false-positive on 'Minority'", () => {
+		const { isMinor, body } = parseMinorTag("Minority carriers recombine…");
+		expect(isMinor).toBe(false);
+		expect(body).toBe("Minority carriers recombine…");
+	});
+
+	it("preserves a multi-line body after the tag", () => {
+		const { isMinor, body } = parseMinorTag("**Minor** — line one\nline two");
+		expect(isMinor).toBe(true);
+		expect(body).toBe("line one\nline two");
+	});
+});
+
 describe("buildRewriteInput", () => {
 	const passage = "  Some paragraph text.  ";
 
-	it("includes passage and notes", () => {
-		const result = buildRewriteInput(passage, ["note one", "note two"]);
+	it("includes passage and Q&A notes", () => {
+		const result = buildRewriteInput(passage, [
+			{ question: "What is X?", answer: "note one" },
+			{ question: "Why?", answer: "note two" },
+		]);
 		expect(result).toContain("<passage>");
 		expect(result).toContain("Some paragraph text.");
 		expect(result).toContain("<notes>");
-		expect(result).toContain("- note one");
-		expect(result).toContain("- note two");
+		expect(result).toContain("Q: What is X?");
+		expect(result).toContain("A: note one");
+		expect(result).toContain("Q: Why?");
+		expect(result).toContain("A: note two");
 	});
 
 	it("omits the notes block when there are no notes", () => {

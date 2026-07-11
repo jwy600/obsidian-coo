@@ -65,8 +65,8 @@ src/
   ai-client.ts       # Responses API: chatCompletion (text+responseId), registerNote, parseResponse, CooApiError
   chain.ts           # Per-note chaining: askChained, reRegisterNote, chain-head storage in chain-data.json
   translate.ts       # Standalone Translate action (inline bracketed insertion)
-  composer-modal.ts  # Discuss modal: Ask (selection-aware, chained) + Rewrite
-  editor-ops.ts      # Paragraph detection, %%note%% CRUD (one per line), translate insertion
+  composer-modal.ts  # Discuss modal: Ask (selection-aware/drill-down, chained, auto-closes) + Rewrite
+  editor-ops.ts      # Paragraph/callout detection + CRUD, drill-down targeting, translate insertion
 ```
 
 Output: `main.js` + `manifest.json` + `styles.css` at repo root (loaded by Obsidian).
@@ -82,8 +82,8 @@ Output: `main.js` + `manifest.json` + `styles.css` at repo root (loaded by Obsid
 | `src/prompts.ts` | Ported `BLOCK_ACTION_PROMPT` (`<scope>`/`<transformations>`/`<ask>`), `BLOCK_ACTION_TRANSLATE_PROMPT`, `REWRITE_PROMPT`, `REGISTER_DOC_PROMPT`. `replaceLanguageTag()` / `replaceTranslationLanguageTag()`. Input builders `buildAskInput()`, `buildRewriteInput()`, `buildTranslateInput()` |
 | `src/chain.ts` | Per-note chaining: `askChained()` (registers on first Ask, chains, retries on expired id), `reRegisterNote()`, `getChainHead`/`setChainHead`/`clearChain` (persisted in `chain-data.json`) |
 | `src/translate.ts` | `performTranslate()` — captures selection, calls Translate, inserts `(translation)` after the selection |
-| `src/composer-modal.ts` | Discuss modal: passage preview + question input + Ask + Rewrite. Ask writes `%%…%%` to the note (chained); Rewrite folds notes into the paragraph (one-shot) |
-| `src/editor-ops.ts` | `findParagraphBounds()`, `findSelectionSpan()`, `getParagraphText()`, `extractMarkdownPrefix()`, callout CRUD (`findCalloutBlocks`, `getCalloutNotes`, `appendCallout`, `replaceParagraphAndRemoveCallouts`), `insertTranslationAfter()` |
+| `src/composer-modal.ts` | Discuss modal: passage preview + question input + Ask + Rewrite. Ask writes `[!coo]` callouts to the note (chained, closes after each Ask); drill-down mode targets a selection inside an answer callout; Rewrite folds callouts into the paragraph (one-shot) |
+| `src/editor-ops.ts` | `findParagraphBounds()`, `findSelectionSpan()`, `getParagraphText()`, `extractMarkdownPrefix()`, callout CRUD + drill-down (`findCalloutBlocks`, `findCalloutContaining`, `getCalloutQaPairs`, `getCalloutBody`, `appendCallout`, `appendCalloutAfter`, `replaceParagraphAndRemoveCallouts`), `insertTranslationAfter()` |
 | `manifest.json` | Plugin metadata (`obsidian-coo`) |
 | `styles.css` | Composer modal, Ask/Rewrite buttons, passage preview |
 
@@ -92,9 +92,10 @@ Output: `main.js` + `manifest.json` + `styles.css` at repo root (loaded by Obsid
 ### Discuss (`coo-discuss`)
 Select text in a paragraph → command palette or right-click → composer modal (passage preview + question input + Ask + Rewrite). **The modal is the command bar; the note is the canvas** — AI output writes into the note, not the modal. With **nothing selected**, the whole document becomes the scope instead (whole-document mode).
 
-- **Ask** (selection-aware): the highlighted phrase is the focal point of the question. The answer is appended to the note as a collapsed `[!coo]` callout below the paragraph (question as title, answer as body — markdown renders when expanded). Asks **chain** via `previous_response_id` (the note is registered as the conversation root on the first Ask).
+- **Ask** (selection-aware): the highlighted phrase is the focal point of the question. The answer is appended to the note as a collapsed `[!coo]` callout below the paragraph (question as title, answer as body — markdown renders when expanded). Asks **chain** via `previous_response_id` (the note is registered as the conversation root on the first Ask). The modal **closes after each Ask** so you can read the answer and, if needed, drill into it (see below).
+- **Drill-down** (select inside an answer): select a phrase *inside an existing answer callout's body* and Ask again — the callout's body becomes the passage, the selection is the focal phrase, and the new answer stacks as a fresh `[!coo]` callout **immediately after the one it's about** (mid-stack or last, blank-line separated). It chains like any Ask (the prior answer is already in context via the chain, and is also sent fresh as the passage). There is no first-vs-follow-up distinction — every Ask is grounded in the current selection.
 - **Whole-document mode** (no selection): the entire note is the scope. Ask answers append as collapsed `[!coo]` callouts at the **bottom of the note** and chain like any other Ask. Rewrite is hidden in this mode (a full-document rewrite is destructive). An empty note shows "The document is empty."
-- **Rewrite**: folds the `%%…%%` notes into the paragraph and removes them. One-shot — does not chain.
+- **Rewrite**: folds the `[!coo]` note callouts (including stacked drill-down answers) into the paragraph and removes them. One-shot — does not chain. Hidden in whole-document and drill-down modes.
 - Undo everywhere is native Ctrl+Z (each action is one editor op).
 
 ### Translate (`coo-translate`)
@@ -127,8 +128,13 @@ Some paragraph text that the user discussed with AI.
 ```
 
 - `appendCallout()` adds a new `[!coo]` callout below the paragraph (blank-line separated; question as title, answer as body with markdown intact).
-- `getCalloutNotes()` reads the body (answer) of each callout below a paragraph (skips the title).
+- `appendCalloutAfter()` adds a new `[!coo]` callout immediately after a given line — used by drill-down to stack an answer right under the one it's about (mid-stack or last).
+- `getCalloutQaPairs()` reads the question (title) + answer (body) of each callout below a paragraph, as Q&A pairs — used by Rewrite so the model sees what each answer addresses.
+- `getCalloutBody()` reads the body of a single callout block — used by drill-down to read the answer a selection sits inside.
+- `findCalloutContaining()` finds the `[!coo]` callout whose body contains a position (or null) — used by `openDiscuss` to detect drill-down.
 - `replaceParagraphAndRemoveCallouts()` consumes them during Rewrite (removes the callout blocks).
+- Drill-down answers stack as sibling callouts (not nested); Rewrite folds the whole stack into the paragraph.
+- A skippable-concept Ask answer is flagged: the model begins it with `**Minor** —`, and `parseMinorTag()` lifts that to a `[Minor]` prefix on the callout title (visible when collapsed) while keeping the body clean.
 - Styled via `.callout[data-callout="coo"]` in `styles.css`.
 - Legacy `%%…%%` annotations (older plugin versions) are treated as paragraph boundaries but are no longer read by Rewrite — re-ask to regenerate them as callouts.
 
@@ -138,7 +144,7 @@ Some paragraph text that the user discussed with AI.
 |---------|------|---------|-------|
 | OpenAI API key | password input | `''` | Required. Stored locally via `saveData()` |
 | Model | dropdown | `gpt-5.2` | `gpt-5.2` / `gpt-5-mini` / `gpt-5.5` |
-| Reasoning effort | dropdown | `none` | `none` / `low` / `medium` / `high` — applies to Rewrite; Ask skips reasoning for speed |
+| Reasoning effort | dropdown | `none` | `none` / `low` / `medium` / `high` — applies to Ask and Rewrite |
 | Web search | toggle | `false` | Scopes to Ask only. Sends `tools: [{ type: 'web_search' }]` |
 | Response language | dropdown | `en` | `en` / `es` / `fr` / `zh` / `ja` — auto-detected from Obsidian locale on first use. Fills the `<language>` tag at runtime |
 | Translation language | dropdown | `Chinese` | Target for Translate. Cannot be the same as response language (auto-adjusted on conflict) |
@@ -155,8 +161,8 @@ Prompts are ported from coo-app-next and stored language-neutral as inline strin
 
 ### Input builders
 
-- `buildAskInput(passage, selection, question)` → `<passage>` + highlighted selection + `Question:`.
-- `buildRewriteInput(passage, notes)` → `<passage>` + `<notes>` bullet list.
+- `buildAskInput(passage, selection, question)` → `Answer this question about the passage.` preamble + `Question:` first, then `<passage>`, then the highlighted selection (matches coo-app-next's ordering; the highlight is appended after the passage). The passage is a paragraph normally, or an answer body when drilling down.
+- `buildRewriteInput(passage, notes)` → `<passage>` + `<notes>` as Q&A pairs (`Q: …` / `A: …`), so the model knows what each answer addresses.
 - `buildTranslateInput(passage)` → `<passage>` (the selected text).
 
 ## API client details
@@ -164,7 +170,7 @@ Prompts are ported from coo-app-next and stored language-neutral as inline strin
 - **Endpoint**: `POST https://api.openai.com/v1/responses` (Responses API)
 - **Non-streaming only**: `chatCompletion()` uses `fetch`, parses `id` (responseId) + `output_text` (falls back to `output[].content[].text`)
 - **Chaining**: `previous_response_id` + `store: true` (set per call — Ask/register store; Rewrite/Translate don't)
-- **Per-call overrides**: `reasoningEffort` and `webSearchEnabled` can override settings (Ask → no reasoning + web search if enabled; Rewrite → reasoning per setting, no web search; Translate/Register → neither)
+- **Per-call overrides**: `reasoningEffort` and `webSearchEnabled` can override settings (Ask and Rewrite → reasoning per setting; Ask also follows the web-search toggle; Translate/Register → no reasoning, no web search)
 - **Errors**: `CooApiError` carries the HTTP status so callers can react (e.g. expired-id retry on 400). HTTP codes mapped to user-friendly notices.
 - Uses `fetch` instead of Obsidian's `requestUrl` because `requestUrl` doesn't support the Responses API reliably
 

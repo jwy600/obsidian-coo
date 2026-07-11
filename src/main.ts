@@ -5,7 +5,11 @@ import { detectObsidianLocale } from "./settings-utils";
 import { CooComposer } from "./composer-modal";
 import { performTranslate } from "./translate";
 import { reRegisterNote } from "./chain";
-import { getSelectedTextWithContext, findSelectionSpan } from "./editor-ops";
+import {
+	getSelectedTextWithContext,
+	findSelectionSpan,
+	findCalloutContaining,
+} from "./editor-ops";
 
 export default class CooPlugin extends Plugin {
 	settings: CooSettings;
@@ -120,6 +124,27 @@ export default class CooPlugin extends Plugin {
 				"",
 				{ startLine: 0, endLine: Math.max(0, editor.lineCount() - 1) },
 				true,
+				null,
+			).open();
+			return;
+		}
+
+		// Selection inside an existing answer callout → drill-down: the answer
+		// body is the passage, and the new answer stacks right under it. Checked
+		// before findSelectionSpan so callout-body selections never hit the
+		// paragraph path.
+		const drillTarget = findCalloutContaining(editor, ctx.from);
+		if (drillTarget) {
+			new CooComposer(
+				this.app,
+				this.settings,
+				editor,
+				this.manifest.dir ?? "",
+				file.path,
+				ctx.selectedText,
+				{ startLine: drillTarget.startLine, endLine: drillTarget.endLine },
+				false,
+				drillTarget,
 			).open();
 			return;
 		}
@@ -139,6 +164,7 @@ export default class CooPlugin extends Plugin {
 			ctx.selectedText,
 			bounds,
 			false,
+			null,
 		).open();
 	}
 
