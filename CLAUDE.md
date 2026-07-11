@@ -134,6 +134,7 @@ Some paragraph text that the user discussed with AI.
 - `findCalloutContaining()` finds the `[!coo]` callout whose body contains a position (or null) — used by `openDiscuss` to detect drill-down.
 - `replaceParagraphAndRemoveCallouts()` consumes them during Rewrite (removes the callout blocks).
 - Drill-down answers stack as sibling callouts (not nested); Rewrite folds the whole stack into the paragraph.
+- A skippable-concept Ask answer is flagged: the model begins it with `**Minor** —`, and `parseMinorTag()` lifts that to a `[Minor]` prefix on the callout title (visible when collapsed) while keeping the body clean.
 - Styled via `.callout[data-callout="coo"]` in `styles.css`.
 - Legacy `%%…%%` annotations (older plugin versions) are treated as paragraph boundaries but are no longer read by Rewrite — re-ask to regenerate them as callouts.
 

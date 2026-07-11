@@ -7,6 +7,7 @@ import {
 	getRewriteSystemPrompt,
 	buildAskInput,
 	buildRewriteInput,
+	parseMinorTag,
 } from "./prompts";
 import {
 	getParagraphText,
@@ -203,18 +204,20 @@ export class CooComposer extends Modal {
 				userPrompt,
 			});
 
-			// Answer writes straight into the note as a collapsed callout
-			// (question as title, answer as body — markdown renders). When
-			// drilling, the new answer stacks right under the answer it's about.
+			// A skippable-concept answer begins with **Minor** —; lift that flag
+			// into the callout title (visible when collapsed) and keep the body
+			// clean. Title/body are otherwise unchanged.
+			const { isMinor, body } = parseMinorTag(result.text);
+			const title = isMinor ? `[Minor] ${question}` : question;
+
+			// Answer writes straight into the note as a collapsed callout (title =
+			// the question, optionally prefixed with [Minor]; body = the answer,
+			// markdown renders). When drilling, the new answer stacks right under
+			// the answer it's about.
 			if (this.drillTarget) {
-				appendCalloutAfter(
-					this.editor,
-					this.drillTarget.endLine,
-					question,
-					result.text,
-				);
+				appendCalloutAfter(this.editor, this.drillTarget.endLine, title, body);
 			} else {
-				appendCallout(this.editor, this.bounds.endLine, question, result.text);
+				appendCallout(this.editor, this.bounds.endLine, title, body);
 			}
 
 			this.close();

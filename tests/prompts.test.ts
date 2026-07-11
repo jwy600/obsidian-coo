@@ -9,6 +9,7 @@ import {
 	buildAskInput,
 	buildRewriteInput,
 	buildTranslateInput,
+	parseMinorTag,
 } from "../src/prompts";
 
 describe("replaceLanguageTag", () => {
@@ -148,6 +149,42 @@ describe("buildAskInput", () => {
 	it("trims the question", () => {
 		const result = buildAskInput(passage, undefined, "  What?  ");
 		expect(result).toContain("Question: What?");
+	});
+});
+
+describe("parseMinorTag", () => {
+	it("detects and strips a bold Minor prefix with em-dash", () => {
+		const { isMinor, body } = parseMinorTag("**Minor** — GCC is a C compiler.");
+		expect(isMinor).toBe(true);
+		expect(body).toBe("GCC is a C compiler.");
+	});
+
+	it("detects a plain 'Minor:' prefix", () => {
+		const { isMinor, body } = parseMinorTag("Minor: a passing example.");
+		expect(isMinor).toBe(true);
+		expect(body).toBe("a passing example.");
+	});
+
+	it("is case-insensitive", () => {
+		expect(parseMinorTag("**minor** — foo").isMinor).toBe(true);
+	});
+
+	it("returns the text unchanged when there is no Minor tag", () => {
+		const { isMinor, body } = parseMinorTag("表达力 means expressivity…");
+		expect(isMinor).toBe(false);
+		expect(body).toBe("表达力 means expressivity…");
+	});
+
+	it("does not false-positive on 'Minority'", () => {
+		const { isMinor, body } = parseMinorTag("Minority carriers recombine…");
+		expect(isMinor).toBe(false);
+		expect(body).toBe("Minority carriers recombine…");
+	});
+
+	it("preserves a multi-line body after the tag", () => {
+		const { isMinor, body } = parseMinorTag("**Minor** — line one\nline two");
+		expect(isMinor).toBe(true);
+		expect(body).toBe("line one\nline two");
 	});
 });
 

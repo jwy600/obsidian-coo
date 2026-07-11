@@ -166,6 +166,22 @@ export function buildAskInput(
 }
 
 /**
+ * Detect and strip a leading "Minor" tag from an Ask answer. The ask prompt has
+ * the model begin skippable-concept answers with **Minor** — (or "Minor —" /
+ * "Minor:"); pull that flag off so it can move to the callout title (visible
+ * when collapsed) and the body stays clean.
+ */
+export function parseMinorTag(text: string): { isMinor: boolean; body: string } {
+	const match = text.match(
+		/^\s*(?:\*\*\s*minor\s*\*\*|minor)\s*[—–\-:]\s*([\s\S]*)$/i,
+	);
+	if (match) {
+		return { isMinor: true, body: (match[1] ?? "").trim() };
+	}
+	return { isMinor: false, body: text };
+}
+
+/**
  * Build the Rewrite input: the passage and the Q&A notes (each callout's
  * question + answer), so the model knows what each answer addresses. Rewrite is
  * one-shot (does not chain).
