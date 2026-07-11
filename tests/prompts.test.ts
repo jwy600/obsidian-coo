@@ -121,18 +121,23 @@ describe("getRegisterDocumentPrompt", () => {
 describe("buildAskInput", () => {
 	const passage = "  The quick brown fox jumps.  ";
 
-	it("includes passage and question without a selection", () => {
+	it("leads with the preamble and question, passage last (no selection)", () => {
 		const result = buildAskInput(passage, undefined, "What?");
+		expect(result).toContain("Answer this question about the passage.");
+		expect(result).toContain("Question: What?");
 		expect(result).toContain("<passage>");
 		expect(result).toContain("The quick brown fox jumps.");
-		expect(result).toContain("Question: What?");
 		expect(result).not.toContain("highlighted");
+		// Question framing comes before the passage (matches coo-app-next).
+		expect(result.indexOf("Question:")).toBeLessThan(result.indexOf("<passage>"));
 	});
 
-	it("includes the highlighted selection when provided", () => {
+	it("appends the highlighted selection after the passage", () => {
 		const result = buildAskInput(passage, "brown fox", "What?");
 		expect(result).toContain('The user highlighted this part: "brown fox"');
 		expect(result).toContain("Question: What?");
+		// Highlight comes after the passage.
+		expect(result.indexOf("<passage>")).toBeLessThan(result.indexOf("highlighted"));
 	});
 
 	it("ignores a blank selection", () => {
@@ -149,13 +154,18 @@ describe("buildAskInput", () => {
 describe("buildRewriteInput", () => {
 	const passage = "  Some paragraph text.  ";
 
-	it("includes passage and notes", () => {
-		const result = buildRewriteInput(passage, ["note one", "note two"]);
+	it("includes passage and Q&A notes", () => {
+		const result = buildRewriteInput(passage, [
+			{ question: "What is X?", answer: "note one" },
+			{ question: "Why?", answer: "note two" },
+		]);
 		expect(result).toContain("<passage>");
 		expect(result).toContain("Some paragraph text.");
 		expect(result).toContain("<notes>");
-		expect(result).toContain("- note one");
-		expect(result).toContain("- note two");
+		expect(result).toContain("Q: What is X?");
+		expect(result).toContain("A: note one");
+		expect(result).toContain("Q: Why?");
+		expect(result).toContain("A: note two");
 	});
 
 	it("omits the notes block when there are no notes", () => {

@@ -120,8 +120,7 @@ export async function askChained(params: AskChainedParams): Promise<ResponseResu
 		systemPrompt,
 		userPrompt,
 		previousResponseId: head,
-		// Ask is Q&A: web search helps, reasoning just adds latency.
-		reasoningEffort: "none" as const,
+		// Reasoning + web search follow the user's settings (like Rewrite).
 		webSearchEnabled: settings.webSearchEnabled,
 	};
 

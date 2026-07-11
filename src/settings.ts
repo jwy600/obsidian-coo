@@ -89,7 +89,7 @@ export class CooSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Reasoning effort")
 			.setDesc(
-				"How much reasoning the model uses. Higher is slower but more thorough. Used for rewrite; ask skips reasoning for speed.",
+				"How much reasoning the model uses. Higher is slower but more thorough. Applies to ask and rewrite.",
 			)
 			.addDropdown((dropdown) =>
 				dropdown

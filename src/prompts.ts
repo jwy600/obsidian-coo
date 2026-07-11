@@ -1,13 +1,15 @@
 import type { ResponseLanguage, TranslateLanguage } from "./types";
 import { LANGUAGE_MAP } from "./types";
+import type { CalloutQaPair } from "./editor-ops";
 
 /**
- * Block-action prompt (ported from coo-app-next).
- * Covers translate, rewrite, and ask. The <language> tag is filled at runtime.
- * The <scope> block is essential for response chaining: it tells the model to
- * treat prior chained turns as background context and not echo them.
+ * System prompt for the Ask action (ported from coo-app-next's block-action
+ * prompt; the plugin uses it only for ask — translate and rewrite have their
+ * own prompts). The <language> tag is filled at runtime. The <scope> block is
+ * essential for response chaining: it tells the model to treat prior chained
+ * turns as background context and not echo them.
  */
-const BLOCK_ACTION_PROMPT = `You transform or answer questions about a given text block.
+const BLOCK_ACTION_PROMPT = `You answer a question about a given text block.
 
 <language></language>
 
@@ -16,18 +18,10 @@ const BLOCK_ACTION_PROMPT = `You transform or answer questions about a given tex
 - Treat any prior conversation turns (carried via response chaining) as background context — use them to interpret the passage, but do not quote or echo them in your output
 </scope>
 
-<transformations>
-For translate and rewrite:
-- Apply the action ONLY to the passage's text
-- Output plain text only — no markdown, no bullet points, no numbered lists, no headers
-- No preamble ("Here's the translation:", "Sure!", etc.) — start directly with the result
-- Keep responses focused and concise — typically similar length to the input
-- Match the tone of the original text
-</transformations>
-
 <ask>
-For ask, the passage is the context that motivated the question — not the thing to answer about. Answer the user's actual question.
-- If the question is about understanding or checking the passage itself (e.g. "what does this term mean?", "is this claim accurate?"), answer from the passage in a sentence or two
+For ask, the passage is the context that motivated the question — usually not the thing to answer about. Answer the user's actual question.
+- If the question is about a term or concept in the passage (e.g. "what does X mean?", "what is X?"), explain the concept itself in its broader sense — what it actually refers to in its field — not just how this paragraph uses it. Then ground it: say what the term specifically implies here. The passage is the concrete instance that motivates the explanation, not the definition
+- If the question is about checking the passage itself (e.g. "is this claim accurate?", "does this follow?"), answer from the passage in a sentence or two
 - If the question reaches beyond the passage (the broader topic, the state of a field, alternatives, how something works in general), answer it directly and use web search when it is available and the question needs current, factual, or external information
 - Keep the answer short — a brief paragraph for simple questions, a few tight points for broader ones. Lead with the direct answer; add only what's needed to support it. No exhaustive writeups, no filler, no restating
 - No preamble — start directly with the answer
@@ -56,16 +50,17 @@ const BLOCK_ACTION_TRANSLATE_PROMPT = `You translate a given text block.
 
 /**
  * Rewrite prompt (ported from coo-app-next).
- * Revises a passage by applying the user's notes as edits.
+ * Revises a passage using the Q&A discussion (callout notes) about it.
  * The <language> tag is filled at runtime.
  */
-const REWRITE_PROMPT = `You revise a passage of Markdown according to the user's notes.
+const REWRITE_PROMPT = `You revise a passage of Markdown using a question-and-answer discussion about it.
 
 <language></language>
 
 <rules>
-- Preserve the original Markdown formatting (paragraphs, headings, lists, code fences, math) unless a note explicitly asks you to change it
-- Apply each note as an edit to the relevant span — do not echo the notes back, do not add new ones
+- Each entry in <notes> is a question the reader asked about the passage, followed by its answer. Integrate each answer's substance where it is relevant — clarify a term, support or correct a claim, or fold in the elaboration it provides
+- Preserve the original Markdown formatting (paragraphs, headings, lists, code fences, math) unless an answer explicitly calls for changing it
+- Do not echo the questions and answers back, and do not add new discussion — only revise the passage
 - Output the revised passage only — no preamble, no explanation, no surrounding fences
 - Match the original tone, register, and language
 </rules>`;
@@ -146,10 +141,11 @@ export function getRegisterDocumentPrompt(): string {
 }
 
 /**
- * Build the Ask input: the paragraph as <passage>, the user's highlighted
- * selection (if any) as the focal phrase, and the question.
- * Chained context (prior Q&A) arrives server-side via previous_response_id,
- * so it is NOT re-sent here.
+ * Build the Ask input: question framing first, then <passage>, then the user's
+ * highlighted selection (if any) as the focal phrase. The passage is a paragraph
+ * normally, or an answer body when drilling down into a note callout. Chained
+ * context (prior Q&A) arrives server-side via previous_response_id, so it is
+ * NOT re-sent here.
  */
 export function buildAskInput(
 	passage: string,
@@ -162,20 +158,30 @@ export function buildAskInput(
 	const highlight = selection?.trim()
 		? `\n\nThe user highlighted this part: "${selection.trim()}"`
 		: "";
-	return `${passageBlock}${highlight}\n\nQuestion: ${trimmedQuestion}`;
+	// Matches the reference app (coo-app-next): preamble + question first, the
+	// passage last. The highlight is the plugin's addition; it always reflects
+	// the user's current selection (including a drill-down selection inside an
+	// answer), so it is never stale and is appended after the passage.
+	return `Answer this question about the passage.\n\nQuestion: ${trimmedQuestion}\n\n${passageBlock}${highlight}`;
 }
 
 /**
- * Build the Rewrite input: the passage and the accumulated notes.
- * Rewrite is one-shot (does not chain).
+ * Build the Rewrite input: the passage and the Q&A notes (each callout's
+ * question + answer), so the model knows what each answer addresses. Rewrite is
+ * one-shot (does not chain).
  */
-export function buildRewriteInput(passage: string, notes: string[]): string {
+export function buildRewriteInput(
+	passage: string,
+	notes: CalloutQaPair[],
+): string {
 	const trimmedPassage = passage.trim();
 	const passageBlock = `<passage>\n${trimmedPassage}\n</passage>`;
 	if (notes.length === 0) {
 		return passageBlock;
 	}
-	const noteBlock = notes.map((n) => `- ${n}`).join("\n");
+	const noteBlock = notes
+		.map((n) => `Q: ${n.question}\nA: ${n.answer}`)
+		.join("\n\n");
 	return `${passageBlock}\n\n<notes>\n${noteBlock}\n</notes>`;
 }
 

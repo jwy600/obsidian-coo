@@ -16,9 +16,15 @@ interface MarkdownPrefix {
 	content: string;
 }
 
-interface CalloutBlock {
+export interface CalloutBlock {
 	startLine: number;
 	endLine: number;
+}
+
+/** A callout's question (its title) and answer (its body). */
+export interface CalloutQaPair {
+	question: string;
+	answer: string;
 }
 
 /**
@@ -53,6 +59,15 @@ function isAnnotationLine(line: string): boolean {
  */
 function isCalloutStart(line: string): boolean {
 	return /^>\s*\[!coo\]/i.test(line);
+}
+
+/**
+ * Check if a line starts ANY callout (e.g. "> [!note]", "> [!warning]"), not
+ * just a coo callout. Used to tell when a selection sits inside a different
+ * callout type — drill-down does not apply there.
+ */
+function isAnyCalloutStart(line: string): boolean {
+	return /^>\s*\[!/i.test(line);
 }
 
 /**
@@ -234,24 +249,107 @@ export function findCalloutBlocks(
 }
 
 /**
- * Get the answer content of each note callout below the paragraph.
- * The callout title (the question) is not included — only the body (answer).
+ * Find the coo callout whose body contains a position, or null if the position
+ * is not inside a coo callout body. Used by drill-down: selecting text inside an
+ * answer callout targets that callout. A position on the callout title line, or
+ * inside a non-coo callout (e.g. "[!note]"), is not a body drill.
  */
-export function getCalloutNotes(
+export function findCalloutContaining(
+	editor: Editor,
+	pos: EditorPosition,
+): CalloutBlock | null {
+	const line = pos.line;
+	const cur = editor.getLine(line);
+	// Title line, or not even a blockquote line → not inside a body.
+	if (isCalloutStart(cur) || !cur.startsWith(">")) return null;
+
+	// Walk up: every line up to a coo callout start must be a body line.
+	let startLine = -1;
+	for (let i = line; i >= 0; i--) {
+		const l = editor.getLine(i);
+		if (isCalloutStart(l)) {
+			startLine = i;
+			break;
+		}
+		if (isAnyCalloutStart(l)) return null; // a different callout type
+		if (!l.startsWith(">")) return null; // left the blockquote region
+	}
+	if (startLine === -1) return null;
+
+	// Walk down from the start to the block's last consecutive ">" line.
+	let endLine = startLine;
+	while (
+		endLine + 1 < editor.lineCount() &&
+		editor.getLine(endLine + 1).startsWith(">")
+	) {
+		endLine++;
+	}
+	return { startLine, endLine };
+}
+
+/**
+ * Get the answer body of a single coo callout block (the title/question is not
+ * included). Used by drill-down to read the answer a selection sits inside.
+ */
+export function getCalloutBody(editor: Editor, block: CalloutBlock): string {
+	const lines: string[] = [];
+	for (let i = block.startLine + 1; i <= block.endLine; i++) {
+		lines.push(stripCalloutBody(editor.getLine(i)));
+	}
+	return lines.join("\n").trim();
+}
+
+/**
+ * Extract the title (the question) from a coo callout's start line, stripping
+ * the "> [!coo]- " prefix. Returns "" when there is no title text.
+ */
+function getCalloutTitle(editor: Editor, block: CalloutBlock): string {
+	const line = editor.getLine(block.startLine);
+	const match = line.match(/^>\s*\[!coo\][-+]?\s*(.*)$/i);
+	return match ? (match[1] ?? "").trim() : "";
+}
+
+/**
+ * Get each callout's question and answer below a paragraph, as Q&A pairs. Used
+ * by Rewrite so the model sees what each answer is about. Callouts with no body
+ * are skipped.
+ */
+export function getCalloutQaPairs(
 	editor: Editor,
 	paragraphEndLine: number,
-): string[] {
+): CalloutQaPair[] {
 	const blocks = findCalloutBlocks(editor, paragraphEndLine);
-	const notes: string[] = [];
+	const pairs: CalloutQaPair[] = [];
 	for (const block of blocks) {
-		const lines: string[] = [];
-		for (let i = block.startLine + 1; i <= block.endLine; i++) {
-			lines.push(stripCalloutBody(editor.getLine(i)));
+		const answer = getCalloutBody(editor, block);
+		if (answer) {
+			pairs.push({ question: getCalloutTitle(editor, block), answer });
 		}
-		const content = lines.join("\n").trim();
-		if (content) notes.push(content);
 	}
-	return notes;
+	return pairs;
+}
+
+/**
+ * Append a note as a new collapsed coo callout below the paragraph, after any
+ * existing note callouts. The question becomes the callout title; the answer
+ * (with its markdown intact) becomes the body. A blank line separates the
+ * callout block from the paragraph / previous callout so it renders as its own
+ * block.
+ */
+/**
+ * Format a collapsed coo callout block string from a title (the question) and
+ * content (the answer, markdown intact). Returns "" when the content is empty.
+ * Shared by appendCallout and appendCalloutAfter.
+ */
+function formatCalloutBlock(title: string, content: string): string {
+	const safeTitle = title.replace(/\n+/g, " ").trim() || "note";
+	const trimmedContent = content.trim();
+	if (!trimmedContent) return "";
+
+	const body = trimmedContent
+		.split("\n")
+		.map((l) => (l.trim() === "" ? ">" : `> ${l}`));
+	return [`> [!coo]- ${safeTitle}`, ...body].join("\n");
 }
 
 /**
@@ -267,14 +365,8 @@ export function appendCallout(
 	title: string,
 	content: string,
 ): void {
-	const safeTitle = title.replace(/\n+/g, " ").trim() || "note";
-	const trimmedContent = content.trim();
-	if (!trimmedContent) return;
-
-	const body = trimmedContent
-		.split("\n")
-		.map((l) => (l.trim() === "" ? ">" : `> ${l}`));
-	const blockText = [`> [!coo]- ${safeTitle}`, ...body].join("\n");
+	const blockText = formatCalloutBlock(title, content);
+	if (!blockText) return;
 
 	const existing = findCalloutBlocks(editor, paragraphEndLine);
 	const insertAfterLine =
@@ -283,6 +375,26 @@ export function appendCallout(
 			: paragraphEndLine;
 	const lineText = editor.getLine(insertAfterLine);
 	const insertPos = { line: insertAfterLine, ch: lineText.length };
+	editor.replaceRange(`\n\n${blockText}`, insertPos);
+}
+
+/**
+ * Append a note as a new collapsed coo callout immediately AFTER a specific
+ * line. Used by drill-down: the new answer stacks right under the answer it is
+ * about (mid-stack or last), with a blank line separating it from the line
+ * above.
+ */
+export function appendCalloutAfter(
+	editor: Editor,
+	afterLine: number,
+	title: string,
+	content: string,
+): void {
+	const blockText = formatCalloutBlock(title, content);
+	if (!blockText) return;
+
+	const lineText = editor.getLine(afterLine);
+	const insertPos = { line: afterLine, ch: lineText.length };
 	editor.replaceRange(`\n\n${blockText}`, insertPos);
 }
 
