@@ -148,7 +148,7 @@ Some paragraph text that the user discussed with AI.
 |---------|------|---------|-------|
 | OpenAI API key | password input | `''` | Required. Stored locally via `saveData()` |
 | Model | dropdown | `gpt-5.2` | `gpt-5.2` / `gpt-5-mini` / `gpt-5.5` |
-| Reasoning effort | dropdown | `none` | `none` / `low` / `medium` / `high` — applies to Ask and Rewrite |
+| Reasoning effort | dropdown | `none` | `none` / `low` / `medium` / `high` — applies to Ask only |
 | Web search | toggle | `false` | Scopes to Ask only. Sends `tools: [{ type: 'web_search' }]` |
 | Response language | dropdown | `en` | `en` / `es` / `fr` / `zh` / `ja` — auto-detected from Obsidian locale on first use. Fills the `<language>` tag at runtime |
 | Translation language | dropdown | `Chinese` | Target for Translate. Cannot be the same as response language (auto-adjusted on conflict) |
@@ -174,7 +174,7 @@ Prompts are ported from coo-app-next and stored language-neutral as inline strin
 - **Endpoint**: `POST https://api.openai.com/v1/responses` (Responses API)
 - **Non-streaming only**: `chatCompletion()` uses `fetch`, parses `id` (responseId) + `output_text` (falls back to `output[].content[].text`)
 - **Chaining**: `previous_response_id` + `store: true` (set per call — Ask/register store; Rewrite/Translate don't)
-- **Per-call overrides**: `reasoningEffort` and `webSearchEnabled` can override settings (Ask and Rewrite → reasoning per setting; Ask also follows the web-search toggle; Translate/Register → no reasoning, no web search)
+- **Per-call overrides**: `reasoningEffort` and `webSearchEnabled` can override settings (Ask → reasoning per setting + follows the web-search toggle; Rewrite/Translate/Register → no reasoning, no web search)
 - **Errors**: `CooApiError` carries the HTTP status so callers can react (e.g. expired-id retry on 400). HTTP codes mapped to user-friendly notices.
 - Uses `fetch` instead of Obsidian's `requestUrl` because `requestUrl` doesn't support the Responses API reliably
 
