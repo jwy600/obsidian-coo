@@ -25,6 +25,9 @@ data.json
 .claude
 everything-claude-code
 
+# Cross-repo sync log (local-only, mirrors ~/coo-app-next)
+SYNC.md
+
 # materials
 obsidian.mp4
 

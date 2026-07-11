@@ -8,6 +8,10 @@ An Obsidian plugin that brings AI-powered discussion and translation into your n
 
 The original Coo web app (Next.js + React + Zustand + OpenAI). This plugin ports a subset of its focus-mode + document-registration features, adapted to Obsidian's editor model.
 
+> **Cross-repo sync log**: `SYNC.md` (gitignored) tracks recent changes in either repo and whether they've been mirrored. Run `/coo-sync` after a merge to refresh it. When porting a change, read `~/coo-app-next/CLAUDE.md` and its `git log` for the source of truth.
+
+**Session-start sync check (do this early each session):** compare the newest date under `SYNC.md` → "Recent changes" against the newest commit in `git log`. If commits exist newer than the last logged entry — meaning a merge landed but `/coo-sync` hasn't been run — surface it to the user first: _"Heads up: there are unlogged commits in this repo. Run `/coo-sync` to update SYNC.md?"_ Then proceed with their request.
+
 **What was ported:**
 
 | Feature | Reference source | Plugin file |
