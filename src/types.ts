@@ -1,4 +1,4 @@
-export type ModelType = "gpt-5.2" | "gpt-5-mini" | "gpt-5.5";
+export type ModelType = "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna";
 
 export type ReasoningEffort = "none" | "low" | "medium" | "high";
 

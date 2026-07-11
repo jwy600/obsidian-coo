@@ -14,7 +14,7 @@ export { mapLocaleToResponseLanguage, detectObsidianLocale, isLanguageConflict, 
 
 export const DEFAULT_SETTINGS: CooSettings = {
 	apiKey: "",
-	model: "gpt-5.2",
+	model: "gpt-5.6-sol",
 	reasoningEffort: "none",
 	webSearchEnabled: false,
 	responseLanguage: "en",
@@ -71,11 +71,11 @@ export class CooSettingTab extends PluginSettingTab {
 			.addDropdown((dropdown) =>
 				dropdown
 					// eslint-disable-next-line obsidianmd/ui/sentence-case -- product names
-					.addOption("gpt-5.2", "GPT-5.2")
+					.addOption("gpt-5.6-sol", "GPT-5.6 Sol")
 					// eslint-disable-next-line obsidianmd/ui/sentence-case -- product names
-					.addOption("gpt-5-mini", "GPT-5 Mini")
+					.addOption("gpt-5.6-terra", "GPT-5.6 Terra")
 					// eslint-disable-next-line obsidianmd/ui/sentence-case -- product names
-					.addOption("gpt-5.5", "GPT-5.5")
+					.addOption("gpt-5.6-luna", "GPT-5.6 Luna")
 					.setValue(this.plugin.settings.model)
 					.onChange(async (value) => {
 						this.plugin.settings = {
