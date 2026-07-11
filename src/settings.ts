@@ -14,9 +14,9 @@ export { mapLocaleToResponseLanguage, detectObsidianLocale, isLanguageConflict, 
 
 export const DEFAULT_SETTINGS: CooSettings = {
 	apiKey: "",
-	model: "gpt-5.6-sol",
-	reasoningEffort: "none",
-	webSearchEnabled: false,
+	model: "gpt-5.6-terra",
+	reasoningEffort: "low",
+	webSearchEnabled: true,
 	responseLanguage: "en",
 	translateLanguage: "Chinese",
 };

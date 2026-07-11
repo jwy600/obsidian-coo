@@ -147,9 +147,9 @@ Some paragraph text that the user discussed with AI.
 | Setting | Type | Default | Notes |
 |---------|------|---------|-------|
 | OpenAI API key | password input | `''` | Required. Stored locally via `saveData()` |
-| Model | dropdown | `gpt-5.6-sol` | `gpt-5.6-sol` / `gpt-5.6-terra` / `gpt-5.6-luna` |
-| Reasoning effort | dropdown | `none` | `none` / `low` / `medium` / `high` — applies to Ask only |
-| Web search | toggle | `false` | Scopes to Ask only. Sends `tools: [{ type: 'web_search' }]` |
+| Model | dropdown | `gpt-5.6-terra` | `gpt-5.6-sol` / `gpt-5.6-terra` / `gpt-5.6-luna` |
+| Reasoning effort | dropdown | `low` | `none` / `low` / `medium` / `high` — applies to Ask only |
+| Web search | toggle | `true` | Scopes to Ask only. Sends `tools: [{ type: 'web_search' }]` |
 | Response language | dropdown | `en` | `en` / `es` / `fr` / `zh` / `ja` — auto-detected from Obsidian locale on first use. Fills the `<language>` tag at runtime |
 | Translation language | dropdown | `Chinese` | Target for Translate. Cannot be the same as response language (auto-adjusted on conflict) |
 
