@@ -29,6 +29,20 @@ export const LANGUAGE_MAP: Record<ResponseLanguage, string> = {
 	ja: "Japanese",
 };
 
+/**
+ * The default question shown as a greyed placeholder in the composer ask
+ * input, localized per response language. Submitted as the ask prompt when the
+ * user presses Ask without typing anything — so the input is "pre-populated"
+ * with a sensible question (placeholder + submit-fallback, no real value).
+ */
+export const DEFAULT_ASK_QUESTION: Record<ResponseLanguage, string> = {
+	en: "What does this mean?",
+	es: "¿Qué significa esto?",
+	fr: "Qu'est-ce que ça veut dire ?",
+	zh: "这是什么意思？",
+	ja: "どういう意味？",
+};
+
 /** Maps TranslateLanguage to its corresponding ResponseLanguage code. */
 export const TRANSLATE_TO_RESPONSE_MAP: Record<
 	TranslateLanguage,

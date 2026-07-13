@@ -1,5 +1,6 @@
 import { App, Editor, Modal, Notice } from "obsidian";
 import type { CooSettings } from "./types";
+import { DEFAULT_ASK_QUESTION } from "./types";
 import { chatCompletion } from "./ai-client";
 import { askChained } from "./chain";
 import {
@@ -108,14 +109,15 @@ export class CooComposer extends Modal {
 			passage.length > 300 ? passage.slice(0, 300) + "..." : passage,
 		);
 
-		// Question input
+		// Question input. The placeholder is the localized default question —
+		// pressing Ask (or Enter) without typing submits it, so the field is
+		// "pre-populated". Which scope you're asking about (whole document, an
+		// answer, or a paragraph) is signalled by the hint + preview above, so
+		// the placeholder can just be the question itself.
 		this.inputEl = contentEl.createEl("textarea", {
 			attr: {
-				placeholder: this.wholeDoc
-					? "Ask a question about this document..."
-					: this.drillTarget
-						? "Ask a question about this answer..."
-						: "Ask a question about this paragraph...",
+				placeholder:
+					DEFAULT_ASK_QUESTION[this.settings.responseLanguage],
 				rows: "2",
 			},
 		});
@@ -173,11 +175,11 @@ export class CooComposer extends Modal {
 	}
 
 	private async handleAsk(): Promise<void> {
-		const question = this.inputEl.value.trim();
-		if (!question) {
-			new Notice("Please enter a question.");
-			return;
-		}
+		// Empty input falls back to the localized default question — the ask
+		// input is "pre-populated" via its placeholder, and Ask/Enter submits it.
+		const question =
+			this.inputEl.value.trim() ||
+			DEFAULT_ASK_QUESTION[this.settings.responseLanguage];
 
 		this.setLoading(true, "ask");
 
