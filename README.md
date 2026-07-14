@@ -11,6 +11,9 @@ Select text in a paragraph and open the **Discuss** composer (command palette or
 - **Ask** — ask a question about the passage (your highlighted phrase is the focal point). The answer is saved as a collapsed callout below the paragraph — the question becomes the title, the answer (with its markdown) becomes the body. Follow-up questions **chain**: coo remembers the whole Q&A for the note, so each question builds on the last.
 - **Rewrite** — fold the gathered notes back into the paragraph. coo rewrites the paragraph incorporating the notes, then removes them. Fully undoable with Ctrl/Cmd+Z.
 
+![](https://github.com/jwy600/obsidian-coo/blob/master/asset/obsidian_ask.png)
+![](https://github.com/jwy600/obsidian-coo/blob/master/asset/obsidian_answer.png)
+
 A few things worth knowing:
 
 - **Drill down** — select a phrase *inside an existing answer* and Ask again. That answer becomes the context, and the follow-up stacks as a fresh callout right beneath the one it's about.
