@@ -6,10 +6,16 @@ coo makes AI contextual in Obsidian. Instead of treating LLMs as a separate plac
 
 ### Discuss
 
-Select text in a paragraph and open the **Discuss** composer (command palette or right-click → *coo discuss*). A small composer opens over your note with the paragraph as context.
+Select text in a paragraph and open the **Discuss** composer (command palette or right-click → *coo discuss*). A small composer opens over your note with the paragraph as context. The question box comes pre-filled with a sensible default (localized to your response language — for example "What does this mean?"). Press **Ask** (or Enter) to ask it as-is, or type your own.
 
-- **Ask** — type a question about the paragraph (your highlighted phrase is the focal point). The answer is saved as a collapsed callout below the paragraph — the question becomes the title, the answer (with its markdown) becomes the body. Follow-up questions **chain**: coo remembers the whole Q&A for the note, so each question builds on the last.
+- **Ask** — ask a question about the passage (your highlighted phrase is the focal point). The answer is saved as a collapsed callout below the paragraph — the question becomes the title, the answer (with its markdown) becomes the body. Follow-up questions **chain**: coo remembers the whole Q&A for the note, so each question builds on the last.
 - **Rewrite** — fold the gathered notes back into the paragraph. coo rewrites the paragraph incorporating the notes, then removes them. Fully undoable with Ctrl/Cmd+Z.
+
+A few things worth knowing:
+
+- **Drill down** — select a phrase *inside an existing answer* and Ask again. That answer becomes the context, and the follow-up stacks as a fresh callout right beneath the one it's about.
+- **Ask with nothing selected** — coo treats the whole document as the context. Answers append as callouts at the bottom of the note, and Rewrite is hidden (a full-document rewrite would be destructive).
+- **Skippable concepts** — when coo judges a concept minor, it tags that answer with a `[Minor]` prefix in the title, visible right in the collapsed callout.
 
 Answers and rewrites write straight into your note — the composer is just the command bar. Notes are `[!coo]` callouts: collapsed by default (only the question shows), expand to read the formatted answer.
 
@@ -56,7 +62,7 @@ Reload Obsidian (Cmd+R or Ctrl+R) → Settings → Community Plugins → enable 
 
 ### Requirements
 
-- Obsidian 1.12.1
+- Obsidian 1.13.1 or later
 - An OpenAI API key
 
 ## Setup
@@ -67,14 +73,14 @@ Reload Obsidian (Cmd+R or Ctrl+R) → Settings → Community Plugins → enable 
 
 ## Settings
 
-| Setting              | Options                                          | Default                  | Description                                                                                                      |
-| -------------------- | ------------------------------------------------ | ------------------------ | ---------------------------------------------------------------------------------------------------------------- |
-| OpenAI API key       | —                                                | (empty)                  | Required. Your API key, stored locally                                                                           |
-| Model                | `gpt-5.2`, `gpt-5-mini`, `gpt-5.5`              | `gpt-5.2`               | Which OpenAI model to use                                                                                        |
-| Reasoning effort     | `none`, `low`, `medium`, `high`                  | `none`                   | Depth of reasoning (applies to Rewrite; Ask skips it for speed)                                                  |
-| Web search           | on / off                                         | off                      | Let the model search the web during Ask                                                                          |
-| Response language    | English, Español, Français, 中文, 日本語         | Auto-detected from Obsidian locale | Language for AI responses. Applied as a runtime directive to all prompts                                |
-| Translation language | English, Español, Français, 中文, 日本語         | Chinese                  | Target language for the Translate action. Cannot match response language                                          |
+| Setting              | Options                                          | Default                                          | Description                                                                                                        |
+| -------------------- | ------------------------------------------------ | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| OpenAI API key       | —                                                | (empty)                                          | Required. Your API key, stored locally and never shared                                                            |
+| Model                | `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`   | `gpt-5.6-terra`                                  | Which OpenAI model to use                                                                                          |
+| Reasoning effort     | `none`, `low`, `medium`, `high`                  | `low`                                            | Depth of reasoning. Higher is slower but more thorough. Applies to **Ask** only — Rewrite and Translate run without it |
+| Web search           | on / off                                         | on                                               | Let the model search the web during Ask for up-to-date information                                                 |
+| Response language    | English, Español, Français, 中文, 日本語         | Auto-detected from Obsidian locale (on first use) | Language for AI responses, applied as a runtime directive to all prompts                                          |
+| Translation language | English, Español, Français, 中文, 日本語         | Chinese                                          | Target language for the Translate action. Cannot match the response language (auto-adjusted on conflict)          |
 
 ## How chaining works
 
