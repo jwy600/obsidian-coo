@@ -13,6 +13,7 @@ import {
 	appendCalloutAfter,
 	replaceParagraphAndRemoveCallouts,
 	insertTranslationAfter,
+	highlightSelection,
 } from "../src/editor-ops";
 
 /**
@@ -379,6 +380,20 @@ describe("appendCallout", () => {
 			"> a2",
 		]);
 	});
+
+	it("leaves a blank line after the callout when the next line is a tight list item", () => {
+		const editor = new MockEditor({ lines: ["1. one", "2. two weird", "3. three"] });
+		appendCallout(asEditor(editor), 1, "What is weird?", "the answer.");
+		expect(editor.lines).toEqual([
+			"1. one",
+			"2. two weird",
+			"",
+			"> [!coo]- What is weird?",
+			"> the answer.",
+			"",
+			"3. three",
+		]);
+	});
 });
 
 describe("findCalloutContaining", () => {
@@ -522,6 +537,20 @@ describe("appendCalloutAfter", () => {
 		appendCalloutAfter(asEditor(editor), 3, "Q2?", "   ");
 		expect(editor.lines).toEqual(["P", "", "> [!coo]- Q?", "> a"]);
 	});
+
+	it("leaves a blank line after the callout when the next line is non-blank", () => {
+		const editor = new MockEditor({ lines: ["> [!coo]- Q?", "> a", "3. three"] });
+		appendCalloutAfter(asEditor(editor), 1, "Q2?", "a2");
+		expect(editor.lines).toEqual([
+			"> [!coo]- Q?",
+			"> a",
+			"",
+			"> [!coo]- Q2?",
+			"> a2",
+			"",
+			"3. three",
+		]);
+	});
 });
 
 describe("replaceParagraphAndRemoveCallouts", () => {
@@ -589,5 +618,19 @@ describe("insertTranslationAfter", () => {
 		const editor = new MockEditor({ lines: ["hello"] });
 		insertTranslationAfter(asEditor(editor), { line: 0, ch: 5 }, "a\nb");
 		expect(editor.lines).toEqual(["hello (a b)"]);
+	});
+});
+
+describe("highlightSelection", () => {
+	it("wraps a mid-line selection with == markers", () => {
+		const editor = new MockEditor({ lines: ["the quantum field"] });
+		highlightSelection(asEditor(editor), { line: 0, ch: 4 }, { line: 0, ch: 11 }, "quantum");
+		expect(editor.lines).toEqual(["the ==quantum== field"]);
+	});
+
+	it("wraps a selection at the start of the line", () => {
+		const editor = new MockEditor({ lines: ["quantum field"] });
+		highlightSelection(asEditor(editor), { line: 0, ch: 0 }, { line: 0, ch: 7 }, "quantum");
+		expect(editor.lines).toEqual(["==quantum== field"]);
 	});
 });
