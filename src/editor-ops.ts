@@ -353,6 +353,21 @@ function formatCalloutBlock(title: string, content: string): string {
 }
 
 /**
+ * A trailing newline to emit after an inserted callout, when needed. The callout
+ * is inserted with a blank line *before* it but relies on what follows for
+ * separation *after*. When the next line is non-blank (e.g. a tight list item),
+ * the callout body would run straight into it — and since an ordered list item
+ * starting with a number other than 1 can't interrupt a paragraph, that next
+ * item gets absorbed into the callout body and disappears in read mode. A blank
+ * line after the callout keeps it its own block. No trailing newline at EOF or
+ * when the next line is already blank.
+ */
+function trailingSeparator(editor: Editor, afterLine: number): string {
+	if (afterLine + 1 >= editor.lineCount()) return "";
+	return editor.getLine(afterLine + 1).trim() === "" ? "" : "\n";
+}
+
+/**
  * Append a note as a new collapsed coo callout below the paragraph, after any
  * existing note callouts. The question becomes the callout title; the answer
  * (with its markdown intact) becomes the body. A blank line separates the
@@ -375,7 +390,10 @@ export function appendCallout(
 			: paragraphEndLine;
 	const lineText = editor.getLine(insertAfterLine);
 	const insertPos = { line: insertAfterLine, ch: lineText.length };
-	editor.replaceRange(`\n\n${blockText}`, insertPos);
+	// Follow with a blank line when the next line isn't already blank, so a tight
+	// list item (e.g. "3. ...") isn't absorbed into the callout body. See
+	// trailingSeparator.
+	editor.replaceRange(`\n\n${blockText}${trailingSeparator(editor, insertAfterLine)}`, insertPos);
 }
 
 /**
@@ -395,7 +413,7 @@ export function appendCalloutAfter(
 
 	const lineText = editor.getLine(afterLine);
 	const insertPos = { line: afterLine, ch: lineText.length };
-	editor.replaceRange(`\n\n${blockText}`, insertPos);
+	editor.replaceRange(`\n\n${blockText}${trailingSeparator(editor, afterLine)}`, insertPos);
 }
 
 /**
@@ -434,4 +452,20 @@ export function insertTranslationAfter(
 ): void {
 	const safe = translation.replace(/\n+/g, " ").trim();
 	editor.replaceRange(` (${safe})`, pos);
+}
+
+/**
+ * Wrap an editor range with Obsidian ==highlight== markers, so the selected word
+ * stays visually highlighted in the note while the discuss modal is open. The
+ * range must be within a single line (a word or short phrase) — ==...== is an
+ * inline highlight that doesn't render across line breaks. One editor op.
+ * Paired with clearSelectionHighlight, which removes the markers on modal close.
+ */
+export function highlightSelection(
+	editor: Editor,
+	from: EditorPosition,
+	to: EditorPosition,
+	text: string,
+): void {
+	editor.replaceRange(`==${text}==`, from, to);
 }

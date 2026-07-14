@@ -125,6 +125,7 @@ export default class CooPlugin extends Plugin {
 				{ startLine: 0, endLine: Math.max(0, editor.lineCount() - 1) },
 				true,
 				null,
+				null,
 			).open();
 			return;
 		}
@@ -145,6 +146,7 @@ export default class CooPlugin extends Plugin {
 				{ startLine: drillTarget.startLine, endLine: drillTarget.endLine },
 				false,
 				drillTarget,
+				{ from: ctx.from, to: ctx.to },
 			).open();
 			return;
 		}
@@ -165,6 +167,7 @@ export default class CooPlugin extends Plugin {
 			bounds,
 			false,
 			null,
+			{ from: ctx.from, to: ctx.to },
 		).open();
 	}
 

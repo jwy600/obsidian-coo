@@ -16,6 +16,7 @@ A few things worth knowing:
 - **Drill down** — select a phrase *inside an existing answer* and Ask again. That answer becomes the context, and the follow-up stacks as a fresh callout right beneath the one it's about.
 - **Ask with nothing selected** — coo treats the whole document as the context. Answers append as callouts at the bottom of the note, and Rewrite is hidden (a full-document rewrite would be destructive).
 - **Skippable concepts** — when coo judges a concept minor, it tags that answer with a `[Minor]` prefix in the title, visible right in the collapsed callout.
+- **Selection highlight** — the word you're asking about is wrapped in a `==highlight==` in the note, so you can always tell what you focused on (the callout title shows your question, not the word). The highlight stays in the note.
 
 Answers and rewrites write straight into your note — the composer is just the command bar. Notes are `[!coo]` callouts: collapsed by default (only the question shows), expand to read the formatted answer.
 

@@ -1,4 +1,4 @@
-import { App, Editor, Modal, Notice } from "obsidian";
+import { App, Editor, Modal, Notice, type EditorPosition } from "obsidian";
 import type { CooSettings } from "./types";
 import { DEFAULT_ASK_QUESTION } from "./types";
 import { chatCompletion } from "./ai-client";
@@ -19,12 +19,19 @@ import {
 	appendCalloutAfter,
 	getCalloutBody,
 	replaceParagraphAndRemoveCallouts,
+	highlightSelection,
 	type CalloutBlock,
 } from "./editor-ops";
 
 interface ParagraphBounds {
 	startLine: number;
 	endLine: number;
+}
+
+/** The editor range of the focal selection, used to highlight it while open. */
+interface SelectionRange {
+	from: EditorPosition;
+	to: EditorPosition;
 }
 
 /**
@@ -45,6 +52,7 @@ export class CooComposer extends Modal {
 	private bounds: ParagraphBounds;
 	private wholeDoc: boolean;
 	private drillTarget: CalloutBlock | null;
+	private selectionRange: SelectionRange | null;
 
 	private inputEl: HTMLTextAreaElement;
 	private askBtn: HTMLButtonElement;
@@ -61,6 +69,7 @@ export class CooComposer extends Modal {
 		bounds: ParagraphBounds,
 		wholeDoc: boolean,
 		drillTarget: CalloutBlock | null,
+		selectionRange: SelectionRange | null,
 	) {
 		super(app);
 		this.settings = settings;
@@ -71,6 +80,7 @@ export class CooComposer extends Modal {
 		this.bounds = bounds;
 		this.wholeDoc = wholeDoc;
 		this.drillTarget = drillTarget;
+		this.selectionRange = selectionRange;
 	}
 
 	onOpen(): void {
@@ -108,6 +118,16 @@ export class CooComposer extends Modal {
 		preview.setText(
 			passage.length > 300 ? passage.slice(0, 300) + "..." : passage,
 		);
+
+		// Highlight the focal selection in the note (==word==) so it's obvious
+		// which word the question is about. The highlight stays in the note after
+		// the modal closes — it records what was selected, which the callout title
+		// (the question) doesn't. Single-line selections only; ==...== is an inline
+		// highlight that doesn't render across line breaks.
+		const range = this.selectionRange;
+		if (range && range.from.line === range.to.line) {
+			highlightSelection(this.editor, range.from, range.to, this.selectedText);
+		}
 
 		// Question input. The placeholder is the localized default question —
 		// pressing Ask (or Enter) without typing submits it, so the field is
