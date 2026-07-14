@@ -1,9 +1,9 @@
 {
 	"id": "obsidian-coo",
 	"name": "coo",
-	"version": "1.1.5",
-	"minAppVersion": "0.15.0",
-	"description": "AI-powered block-level annotation and rewriting for your notes.",
+	"version": "1.5.0",
+	"minAppVersion": "1.13.1",
+	"description": "Discuss, translate, and rewrite your notes with AI — grounded in the paragraph you're editing.",
 	"author": "Wenyi",
 	"isDesktopOnly": false
 }
