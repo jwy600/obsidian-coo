@@ -43,7 +43,7 @@ Because coo chains questions against a snapshot of your note, heavily editing a 
 
 1. Go to the [latest release](https://github.com/jwy600/obsidian-coo/releases/latest)
 2. Download `main.js`, `manifest.json`, and `styles.css`
-3. Create a folder at `<Your Vault>/.obsidian/plugins/obsidian-coo/`
+3. Create a folder at `<Your Vault>/.obsidian/plugins/coo/`
 4. Move the three downloaded files into that folder
 5. Reload Obsidian (Cmd+R or Ctrl+R) → Settings → Community Plugins → enable **coo**
 
@@ -59,7 +59,7 @@ npm run build
 Copy the output files into your vault's plugin folder:
 
 ```bash
-cp main.js manifest.json styles.css "<Your Vault>/.obsidian/plugins/obsidian-coo/"
+cp main.js manifest.json styles.css "<Your Vault>/.obsidian/plugins/coo/"
 ```
 
 Reload Obsidian (Cmd+R or Ctrl+R) → Settings → Community Plugins → enable **coo**.

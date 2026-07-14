@@ -88,7 +88,7 @@ Output: `main.js` + `manifest.json` + `styles.css` at repo root (loaded by Obsid
 | `src/translate.ts` | `performTranslate()` — captures selection, calls Translate, inserts `(translation)` after the selection |
 | `src/composer-modal.ts` | Discuss modal: passage preview + question input + Ask + Rewrite. Ask writes `[!coo]` callouts to the note (chained, closes after each Ask); drill-down mode targets a selection inside an answer callout; Rewrite folds callouts into the paragraph (one-shot) |
 | `src/editor-ops.ts` | `findParagraphBounds()`, `findSelectionSpan()`, `getParagraphText()`, `extractMarkdownPrefix()`, callout CRUD + drill-down (`findCalloutBlocks`, `findCalloutContaining`, `getCalloutQaPairs`, `getCalloutBody`, `appendCallout`, `appendCalloutAfter`, `replaceParagraphAndRemoveCallouts`), `insertTranslationAfter()`, `highlightSelection()` |
-| `manifest.json` | Plugin metadata (`obsidian-coo`) |
+| `manifest.json` | Plugin metadata (`coo`) |
 | `styles.css` | Composer modal, Ask/Rewrite buttons, passage preview |
 
 ## Two features + chaining
@@ -202,7 +202,7 @@ Tests (`tests/`): `editor-ops`, `ai-client` (`parseResponse`, `CooApiError`), `p
 ### Manual deployment
 ```bash
 npm run build
-cp main.js manifest.json styles.css "<Vault>/.obsidian/plugins/obsidian-coo/"
+cp main.js manifest.json styles.css "<Vault>/.obsidian/plugins/coo/"
 ```
 Reload Obsidian (`Cmd+R`) → Settings → Community plugins → enable Coo.
 
