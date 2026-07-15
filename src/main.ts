@@ -20,9 +20,8 @@ export default class CooPlugin extends Plugin {
 
 		// --- Discuss: select a paragraph → composer (Ask + Rewrite) ---
 		this.addCommand({
-			id: "coo-discuss",
-			// eslint-disable-next-line obsidianmd/ui/sentence-case -- command name
-			name: "discuss",
+			id: "discuss",
+			name: "Discuss",
 			editorCallback: (editor: Editor) => {
 				this.openDiscuss(editor);
 			},
@@ -30,9 +29,8 @@ export default class CooPlugin extends Plugin {
 
 		// --- Translate: select a word/phrase → inline bracketed translation ---
 		this.addCommand({
-			id: "coo-translate",
-			// eslint-disable-next-line obsidianmd/ui/sentence-case -- command name
-			name: "translate",
+			id: "translate",
+			name: "Translate",
 			editorCallback: (editor: Editor) => {
 				void performTranslate(editor, this.settings);
 			},
@@ -40,9 +38,8 @@ export default class CooPlugin extends Plugin {
 
 		// --- Re-register note: refresh the chaining snapshot ---
 		this.addCommand({
-			id: "coo-re-register",
-			// eslint-disable-next-line obsidianmd/ui/sentence-case -- command name
-			name: "re-register note",
+			id: "re-register",
+			name: "Re-register note",
 			editorCallback: async (editor: Editor) => {
 				await this.reRegister(editor);
 			},
@@ -53,7 +50,6 @@ export default class CooPlugin extends Plugin {
 			this.app.workspace.on("editor-menu", (menu, editor) => {
 				if (!editor.somethingSelected()) return;
 				menu.addItem((item) => {
-					// eslint-disable-next-line obsidianmd/ui/sentence-case -- brand label
 					item.setTitle("coo discuss")
 						.setIcon("messages-square")
 						.onClick(() => {
@@ -61,7 +57,6 @@ export default class CooPlugin extends Plugin {
 						});
 				});
 				menu.addItem((item) => {
-					// eslint-disable-next-line obsidianmd/ui/sentence-case -- brand label
 					item.setTitle("coo translate")
 						.setIcon("languages")
 						.onClick(() => {
@@ -222,7 +217,6 @@ export default class CooPlugin extends Plugin {
 
 	private requireApiKey(): boolean {
 		if (!this.settings.apiKey) {
-			// eslint-disable-next-line obsidianmd/ui/sentence-case -- "OpenAI API" is a proper noun
 			new Notice("Please set your OpenAI API key in coo settings.");
 			return false;
 		}

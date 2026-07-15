@@ -46,13 +46,11 @@ export class CooSettingTab extends PluginSettingTab {
 		containerEl.empty();
 
 		new Setting(containerEl)
-			// eslint-disable-next-line obsidianmd/ui/sentence-case -- "OpenAI API" is a proper noun
 			.setName("OpenAI API key")
 			.setDesc("Required. Your key is stored locally and never shared.")
 			.addText((text) => {
 				text.inputEl.type = "password";
 				text
-					// eslint-disable-next-line obsidianmd/ui/sentence-case -- placeholder format
 					.setPlaceholder("sk-...")
 					.setValue(this.plugin.settings.apiKey)
 					.onChange(async (value) => {
@@ -66,15 +64,11 @@ export class CooSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Model")
-			// eslint-disable-next-line obsidianmd/ui/sentence-case -- "OpenAI" is a proper noun
 			.setDesc("Which OpenAI model to use for responses.")
 			.addDropdown((dropdown) =>
 				dropdown
-					// eslint-disable-next-line obsidianmd/ui/sentence-case -- product names
 					.addOption("gpt-5.6-sol", "GPT-5.6 Sol")
-					// eslint-disable-next-line obsidianmd/ui/sentence-case -- product names
 					.addOption("gpt-5.6-terra", "GPT-5.6 Terra")
-					// eslint-disable-next-line obsidianmd/ui/sentence-case -- product names
 					.addOption("gpt-5.6-luna", "GPT-5.6 Luna")
 					.setValue(this.plugin.settings.model)
 					.onChange(async (value) => {
@@ -166,7 +160,6 @@ export class CooSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Translation language")
-			// eslint-disable-next-line obsidianmd/ui/sentence-case -- "Translate" is a feature name
 			.setDesc("Target language for the Translate action.")
 			.addDropdown((dropdown) => {
 				const currentResponseLang =

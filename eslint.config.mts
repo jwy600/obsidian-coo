@@ -23,6 +23,29 @@ export default tseslint.config(
 		},
 	},
 	...obsidianmd.configs.recommended,
+	{
+		// Scoped to TS/JS so the obsidianmd plugin (registered by
+		// configs.recommended under those file patterns) is in scope here.
+		files: ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx"],
+		rules: {
+			// Keep the recommended sentence-case rule at "error" with its default
+			// strictness; ignoreRegex (additive — it does not weaken the default
+			// brand/acronym lists) exempts a few intentional strings:
+			//   ^coo       plugin brand (kept lower-case)
+			//   ^sk-       API-key placeholder format
+			//   OpenAI     PascalCase brand, not auto-preserved under
+			//              enforceCamelCaseLower
+			//   GPT-5.6    model labels (GPT-5.6 Sol / Terra / Luna)
+			//   Translate  feature name used mid-sentence
+			"obsidianmd/ui/sentence-case": [
+				"error",
+				{
+					enforceCamelCaseLower: true,
+					ignoreRegex: ["^coo", "^sk-", "OpenAI", "GPT-5\\.6", "Translate"],
+				},
+			],
+		},
+	},
 	globalIgnores([
 		"node_modules",
 		"dist",

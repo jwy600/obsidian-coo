@@ -21,7 +21,7 @@ The original Coo web app (Next.js + React + Zustand + OpenAI). This plugin ports
 | Rewrite prompt | `lib/config/promptTemplates.ts` | `src/prompts.ts` |
 | Document registration (`store: true` priming call) | `lib/api/registerDocument.ts` | `src/chain.ts` (`registerNote`) |
 | Conversation chaining (`previous_response_id`) | `lib/api/openAiClient.ts` | `src/chain.ts` (`askChained`) |
-| OpenAI Responses API (non-streaming) | `lib/api/openAiClient.ts` | `src/ai-client.ts` (raw `fetch`) |
+| OpenAI Responses API (non-streaming) | `lib/api/openAiClient.ts` | `src/ai-client.ts` (`requestUrl`) |
 | Settings (model, reasoning, web search, language) | `lib/store/settings-slice.ts` | `src/settings.ts` |
 
 **What was NOT ported (Obsidian handles natively or not applicable):**
@@ -44,7 +44,7 @@ The original Coo web app (Next.js + React + Zustand + OpenAI). This plugin ports
 - **Bundler**: esbuild → `main.js`
 - **Package manager**: npm
 - **Runtime**: Obsidian Plugin API (`obsidian` package)
-- **AI API**: OpenAI Responses API (`/v1/responses`) via raw `fetch`
+- **AI API**: OpenAI Responses API (`/v1/responses`) via Obsidian's `requestUrl`
 - **Target**: ES6 + ES2018, mobile-compatible
 
 ## Commands
@@ -79,7 +79,7 @@ Output: `main.js` + `manifest.json` + `styles.css` at repo root (loaded by Obsid
 
 | File | Purpose |
 |------|---------|
-| `src/main.ts` | `CooPlugin`: `onload` registers 3 commands (`coo-discuss`, `coo-translate`, `coo-re-register`) + editor context menu + legacy prompt cleanup. Helpers `openDiscuss()`, `reRegister()` |
+| `src/main.ts` | `CooPlugin`: `onload` registers 3 commands (`discuss`, `translate`, `re-register`) + editor context menu + legacy prompt cleanup. Helpers `openDiscuss()`, `reRegister()` |
 | `src/settings.ts` | `DEFAULT_SETTINGS`, `CooSettingTab` with 6 settings, re-exports from `settings-utils` |
 | `src/settings-utils.ts` | `mapLocaleToResponseLanguage()`, `detectObsidianLocale()`, `isLanguageConflict()`, `getDefaultTranslateLanguage()` |
 | `src/ai-client.ts` | `chatCompletion()` (returns `{ text, responseId }`), `registerNote()` (priming call → root id), `parseResponse()`, `CooApiError`. Supports `previousResponseId`, `store`, per-call `reasoningEffort`/`webSearchEnabled` overrides |
@@ -93,7 +93,7 @@ Output: `main.js` + `manifest.json` + `styles.css` at repo root (loaded by Obsid
 
 ## Two features + chaining
 
-### Discuss (`coo-discuss`)
+### Discuss
 Select text in a paragraph → command palette or right-click → composer modal (passage preview + question input + Ask + Rewrite). **The modal is the command bar; the note is the canvas** — AI output writes into the note, not the modal. With **nothing selected**, the whole document becomes the scope instead (whole-document mode).
 
 - **Ask** (selection-aware): the highlighted phrase is the focal point of the question. The answer is appended to the note as a collapsed `[!coo]` callout below the paragraph (question as title, answer as body — markdown renders when expanded). Asks **chain** via `previous_response_id` (the note is registered as the conversation root on the first Ask). The modal **closes after each Ask** so you can read the answer and, if needed, drill into it (see below). The question input is pre-filled with a localized default (`DEFAULT_ASK_QUESTION` in `types.ts`, e.g. "What does this mean?" for `en`) shown as its placeholder; submitting empty falls back to it, so a single Ask/Enter asks the default. The focal selection is also wrapped in a persistent `==...==` highlight in the note (`highlightSelection` on open — single-line selections only), so the word in focus stays recorded; the callout title is the question, not the word.
@@ -102,10 +102,10 @@ Select text in a paragraph → command palette or right-click → composer modal
 - **Rewrite**: folds the `[!coo]` note callouts (including stacked drill-down answers) into the paragraph and removes them. One-shot — does not chain. Hidden in whole-document and drill-down modes.
 - Undo everywhere is native Ctrl+Z (each action is one editor op).
 
-### Translate (`coo-translate`)
+### Translate
 Select a word or phrase → command palette or right-click → the translation is inserted inline, bracketed `( )`, immediately after the selection. The original text is preserved. One editor op (Ctrl+Z reverts). Does not chain.
 
-### Re-register note (`coo-re-register`)
+### Re-register note
 Refreshes the chaining snapshot: re-registers the whole note (new root id) and resets the chain. Use after heavily editing the note — otherwise the registered context drifts stale.
 
 ## Chaining
@@ -172,11 +172,11 @@ Prompts are ported from coo-app-next and stored language-neutral as inline strin
 ## API client details
 
 - **Endpoint**: `POST https://api.openai.com/v1/responses` (Responses API)
-- **Non-streaming only**: `chatCompletion()` uses `fetch`, parses `id` (responseId) + `output_text` (falls back to `output[].content[].text`)
+- **Non-streaming only**: `chatCompletion()` calls `requestUrl` (via `apiFetch`), parses `id` (responseId) + `output_text` (falls back to `output[].content[].text`)
 - **Chaining**: `previous_response_id` + `store: true` (set per call — Ask/register store; Rewrite/Translate don't)
 - **Per-call overrides**: `reasoningEffort` and `webSearchEnabled` can override settings (Ask → reasoning per setting + follows the web-search toggle; Rewrite/Translate/Register → no reasoning, no web search)
 - **Errors**: `CooApiError` carries the HTTP status so callers can react (e.g. expired-id retry on 400). HTTP codes mapped to user-friendly notices.
-- Uses `fetch` instead of Obsidian's `requestUrl` because `requestUrl` doesn't support the Responses API reliably
+- Uses Obsidian's `requestUrl` with `throw: false` so 4xx/5xx responses come back (status + body) instead of throwing — letting `callApi` read the error body and map HTTP codes to notices. (`fetch` is blocked by the `no-restricted-globals` lint rule.)
 
 ## Architecture guidelines
 
@@ -187,7 +187,7 @@ Prompts are ported from coo-app-next and stored language-neutral as inline strin
 - **No hidden network calls**: All API calls are user-initiated.
 - **Error handling**: Catch at every level. Show `new Notice(message, duration)` for user feedback.
 - **CSS**: Use Obsidian CSS variables for theme compatibility. Use `.addClass`/`.removeClass` / `setCssProps` instead of direct `style.*` assignments per linter rules.
-- **Linting**: `eslint-plugin-obsidianmd` enforces sentence case for UI text, `requestUrl` over `fetch` (Responses API exempted), `.setHeading()` for settings headings, and no direct style assignments.
+- **Linting**: `eslint-plugin-obsidianmd` enforces sentence case for UI text, `requestUrl` over `fetch`, `.setHeading()` for settings headings, and no direct style assignments. Brand/format strings the rule would mangle (`coo`, `sk-`, `GPT-5.6`, `OpenAI`, `Translate`) are exempted via `ignoreRegex` in `eslint.config.mts` — not via inline `eslint-disable`, which the submission checker forbids for these rules.
 
 ## Testing
 
@@ -197,7 +197,7 @@ npm run build        # tsc -noEmit (includes tests) + esbuild bundle
 npm run lint         # eslint
 ```
 
-Tests (`tests/`): `editor-ops`, `ai-client` (`parseResponse`, `CooApiError`), `prompts` (language tags, input builders), `chain` (chain-head storage), `settings` (locale + conflict utils). `editor-ops` tests use a mock Editor that faithfully implements `replaceRange`.
+Tests (`tests/`): `editor-ops`, `ai-client` (`parseResponse`, `CooApiError`), `prompts` (language tags, input builders), `chain` (chain-head storage), `settings` (locale + conflict utils). `editor-ops` tests use a mock Editor that faithfully implements `replaceRange`. The `obsidian` package is aliased to `tests/stubs/obsidian.ts` (`vitest.config.ts`) so modules importing `requestUrl` as a runtime value load under vitest.
 
 ### Manual deployment
 ```bash
