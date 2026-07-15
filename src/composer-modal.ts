@@ -86,6 +86,9 @@ export class CooComposer extends Modal {
 	onOpen(): void {
 		const { contentEl } = this;
 		contentEl.addClass("coo-composer-modal");
+		// Tag the .modal-container so CSS can scope backdrop + bottom-pinning
+		// without `:has()` (the submission checker flags :has for perf).
+		this.containerEl.addClass("coo-composer-open");
 		if (this.wholeDoc) contentEl.addClass("is-whole-doc");
 
 		contentEl.createEl("h3", { text: "coo discuss" });

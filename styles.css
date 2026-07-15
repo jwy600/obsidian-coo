@@ -9,16 +9,19 @@
 
 /* ---- Composer modal — translucent backdrop, pinned to bottom ---- */
 
-.modal-container:has(.coo-composer-modal) .modal-bg {
+/* `.coo-composer-open` is added to the .modal-container in onOpen() so these
+   rules scope to this modal with a plain class — a relative parent selector
+   here is flagged by the submission checker for performance. */
+.modal-container.coo-composer-open .modal-bg {
 	opacity: 0.3;
 }
 
-.modal-container:has(.coo-composer-modal) {
+.modal-container.coo-composer-open {
 	align-items: flex-end;
 	justify-content: center;
 }
 
-.modal-container:has(.coo-composer-modal) .modal {
+.modal-container.coo-composer-open .modal {
 	margin: 0;
 	border-bottom-left-radius: 0;
 	border-bottom-right-radius: 0;
