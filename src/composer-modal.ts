@@ -88,7 +88,6 @@ export class CooComposer extends Modal {
 		contentEl.addClass("coo-composer-modal");
 		if (this.wholeDoc) contentEl.addClass("is-whole-doc");
 
-		// eslint-disable-next-line obsidianmd/ui/sentence-case -- brand label
 		contentEl.createEl("h3", { text: "coo discuss" });
 
 		// Whole-document mode: signal it clearly so the truncated preview below
@@ -171,7 +170,7 @@ export class CooComposer extends Modal {
 			void this.handleAsk();
 		});
 
-		setTimeout(() => this.inputEl.focus(), 50);
+		window.setTimeout(() => this.inputEl.focus(), 50);
 	}
 
 	onClose(): void {

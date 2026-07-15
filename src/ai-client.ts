@@ -1,3 +1,4 @@
+import { requestUrl, type RequestUrlResponse } from "obsidian";
 import type { CooSettings, ReasoningEffort } from "./types";
 import { getRegisterDocumentPrompt } from "./prompts";
 
@@ -135,15 +136,19 @@ export function parseResponse(responseText: string): ResponseResult {
 async function apiFetch(
 	apiKey: string,
 	body: Record<string, unknown>,
-): Promise<Response> {
-	// eslint-disable-next-line no-restricted-globals -- requestUrl doesn't support the Responses API reliably
-	return fetch(API_URL, {
+): Promise<RequestUrlResponse> {
+	// requestUrl with throw: false mirrors fetch semantics: it returns the
+	// response (status + body) for 4xx/5xx instead of throwing, so callApi can
+	// read the error body and map HTTP codes to user-friendly notices.
+	return requestUrl({
+		url: API_URL,
 		method: "POST",
+		contentType: "application/json",
 		headers: {
-			"Content-Type": "application/json",
 			Authorization: `Bearer ${apiKey}`,
 		},
 		body: JSON.stringify(body),
+		throw: false,
 	});
 }
 
@@ -157,9 +162,9 @@ async function callApi(params: ChatCompletionParams): Promise<ResponseResult> {
 
 	const body = buildRequestBody(params);
 	const response = await apiFetch(params.settings.apiKey, body);
-	const responseText = await response.text();
+	const responseText = response.text;
 
-	if (!response.ok) {
+	if (response.status >= 400) {
 		throw new CooApiError(
 			response.status,
 			mapHttpError(response.status, responseText),
