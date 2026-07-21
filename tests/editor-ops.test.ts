@@ -14,6 +14,7 @@ import {
 	replaceParagraphAndRemoveCallouts,
 	insertTranslationAfter,
 	highlightSelection,
+	normalizeMathDelimiters,
 } from "../src/editor-ops";
 
 /**
@@ -394,6 +395,17 @@ describe("appendCallout", () => {
 			"3. three",
 		]);
 	});
+
+	it("normalizes TeX math delimiters in the callout body so formulas render", () => {
+		const editor = new MockEditor({ lines: ["P"] });
+		appendCallout(asEditor(editor), 0, "Q?", "The synthetic \\(y\\) is a reserve.");
+		expect(editor.lines).toEqual([
+			"P",
+			"",
+			"> [!coo]- Q?",
+			"> The synthetic $y$ is a reserve.",
+		]);
+	});
 });
 
 describe("findCalloutContaining", () => {
@@ -632,5 +644,49 @@ describe("highlightSelection", () => {
 		const editor = new MockEditor({ lines: ["quantum field"] });
 		highlightSelection(asEditor(editor), { line: 0, ch: 0 }, { line: 0, ch: 7 }, "quantum");
 		expect(editor.lines).toEqual(["==quantum== field"]);
+	});
+});
+
+describe("normalizeMathDelimiters", () => {
+	it("converts inline \\(…\\) to $…$", () => {
+		expect(normalizeMathDelimiters("\\(y\\)")).toBe("$y$");
+	});
+
+	it("converts inline math that contains LaTeX commands", () => {
+		expect(normalizeMathDelimiters("\\(r\\Delta x\\)")).toBe("$r\\Delta x$");
+	});
+
+	it("converts an inline delimiter mid-prose", () => {
+		expect(normalizeMathDelimiters("synthetic \\(y\\) reserve")).toBe(
+			"synthetic $y$ reserve",
+		);
+	});
+
+	it("converts multiple inline delimiters in one string", () => {
+		expect(normalizeMathDelimiters("\\(a\\) and \\(b\\)")).toBe("$a$ and $b$");
+	});
+
+	it("converts single-line display math \\[…\\] to $$…$$", () => {
+		expect(normalizeMathDelimiters("\\[ E = mc^2 \\]")).toBe("$$ E = mc^2 $$");
+	});
+
+	it("converts multi-line display math", () => {
+		expect(normalizeMathDelimiters("\\[\nx = 1\n\\]")).toBe("$$\nx = 1\n$$");
+	});
+
+	it("leaves escaped prose brackets like \\[W\\] untouched", () => {
+		expect(normalizeMathDelimiters("\\[W\\]hat")).toBe("\\[W\\]hat");
+	});
+
+	it("leaves non-mathy bracketed prose untouched", () => {
+		expect(normalizeMathDelimiters("see \\[TOPIC FOO\\]")).toBe("see \\[TOPIC FOO\\]");
+	});
+
+	it("leaves already-correct $…$ math as-is", () => {
+		expect(normalizeMathDelimiters("$y$ and $$z$$")).toBe("$y$ and $$z$$");
+	});
+
+	it("leaves plain text without delimiters as-is", () => {
+		expect(normalizeMathDelimiters("Hello world")).toBe("Hello world");
 	});
 });

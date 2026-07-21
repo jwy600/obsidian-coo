@@ -70,7 +70,7 @@ src/
   chain.ts           # Per-note chaining: askChained, reRegisterNote, chain-head storage in chain-data.json
   translate.ts       # Standalone Translate action (inline bracketed insertion)
   composer-modal.ts  # Discuss modal: Ask (selection-aware/drill-down, chained, auto-closes) + Rewrite
-  editor-ops.ts      # Paragraph/callout detection + CRUD, drill-down targeting, translate insertion, selection highlight
+  editor-ops.ts      # Paragraph/callout detection + CRUD, drill-down targeting, translate insertion, selection highlight, math-delimiter normalization
 ```
 
 Output: `main.js` + `manifest.json` + `styles.css` at repo root (loaded by Obsidian).
@@ -87,7 +87,7 @@ Output: `main.js` + `manifest.json` + `styles.css` at repo root (loaded by Obsid
 | `src/chain.ts` | Per-note chaining: `askChained()` (registers on first Ask, chains, retries on expired id), `reRegisterNote()`, `getChainHead`/`setChainHead`/`clearChain` (persisted in `chain-data.json`) |
 | `src/translate.ts` | `performTranslate()` — captures selection, calls Translate, inserts `(translation)` after the selection |
 | `src/composer-modal.ts` | Discuss modal: passage preview + question input + Ask + Rewrite. Ask writes `[!coo]` callouts to the note (chained, closes after each Ask); drill-down mode targets a selection inside an answer callout; Rewrite folds callouts into the paragraph (one-shot) |
-| `src/editor-ops.ts` | `findParagraphBounds()`, `findSelectionSpan()`, `getParagraphText()`, `extractMarkdownPrefix()`, callout CRUD + drill-down (`findCalloutBlocks`, `findCalloutContaining`, `getCalloutQaPairs`, `getCalloutBody`, `appendCallout`, `appendCalloutAfter`, `replaceParagraphAndRemoveCallouts`), `insertTranslationAfter()`, `highlightSelection()` |
+| `src/editor-ops.ts` | `findParagraphBounds()`, `findSelectionSpan()`, `getParagraphText()`, `extractMarkdownPrefix()`, callout CRUD + drill-down (`findCalloutBlocks`, `findCalloutContaining`, `getCalloutQaPairs`, `getCalloutBody`, `appendCallout`, `appendCalloutAfter`, `replaceParagraphAndRemoveCallouts`), `normalizeMathDelimiters()`, `insertTranslationAfter()`, `highlightSelection()` |
 | `manifest.json` | Plugin metadata (`coo`) |
 | `styles.css` | Composer modal, Ask/Rewrite buttons, passage preview |
 
@@ -138,6 +138,7 @@ Some paragraph text that the user discussed with AI.
 - `findCalloutContaining()` finds the `[!coo]` callout whose body contains a position (or null) — used by `openDiscuss` to detect drill-down.
 - `replaceParagraphAndRemoveCallouts()` consumes them during Rewrite (removes the callout blocks).
 - Drill-down answers stack as sibling callouts (not nested); Rewrite folds the whole stack into the paragraph.
+- TeX math delimiters in an answer are normalized to Obsidian's before a callout is written (`normalizeMathDelimiters()` in `editor-ops.ts`, called from `formatCalloutBlock`): inline `\(...\)` → `$…$`, display `\[...\]` → `$$…$$` — the display conversion is guarded so escaped prose brackets like `\[W\]` stay put. The Ask and Rewrite prompts also tell the model to emit `$`/`$$` directly.
 - A skippable-concept Ask answer is flagged: the model begins it with `**Minor** —`, and `parseMinorTag()` lifts that to a `[Minor]` prefix on the callout title (visible when collapsed) while keeping the body clean.
 - Styled via `.callout[data-callout="coo"]` in `styles.css`.
 - Legacy `%%…%%` annotations (older plugin versions) are treated as paragraph boundaries but are no longer read by Rewrite — re-ask to regenerate them as callouts.
