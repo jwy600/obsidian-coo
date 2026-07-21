@@ -337,16 +337,43 @@ export function getCalloutQaPairs(
  * block.
  */
 /**
+ * Normalize the math delimiters an LLM tends to emit into the ones Obsidian
+ * actually renders. Obsidian's MathJax only honors `$…$` (inline) and `$$…$$`
+ * (display); models often return TeX's `\(...\)` and `\[...\]` instead, which
+ * show up as literal text. We also see `\[…\]` used to *escape brackets in
+ * prose* (e.g. `\[W\]hat`, `\[TOPIC …\]`), so the display conversion is guarded
+ * — only spans whose body looks like math convert.
+ *
+ * Pure string transform; called for every callout body in formatCalloutBlock.
+ */
+export function normalizeMathDelimiters(text: string): string {
+	// Inline math. Escaped parens in prose are vanishingly rare, so every
+	// \( … \) pair is treated as inline math.
+	let out = text.replace(/\\\(([\s\S]+?)\\\)/g, (_m, body: string) => `$${body}$`);
+	// Display math. Convert only when the body contains a LaTeX command, an
+	// exponent/index, braces, or an equals sign — signals it is math, not
+	// escaped prose brackets.
+	out = out.replace(/\\\[([\s\S]+?)\\\]/g, (match, body: string) => {
+		if (/\\[a-zA-Z]+|[\^_{}=]/.test(body)) {
+			return `$$${body}$$`;
+		}
+		return match;
+	});
+	return out;
+}
+
+/**
  * Format a collapsed coo callout block string from a title (the question) and
  * content (the answer, markdown intact). Returns "" when the content is empty.
- * Shared by appendCallout and appendCalloutAfter.
+ * Math delimiters are normalized first so formulas render in the note. Shared
+ * by appendCallout and appendCalloutAfter.
  */
 function formatCalloutBlock(title: string, content: string): string {
 	const safeTitle = title.replace(/\n+/g, " ").trim() || "note";
-	const trimmedContent = content.trim();
-	if (!trimmedContent) return "";
+	const normalized = normalizeMathDelimiters(content.trim());
+	if (!normalized) return "";
 
-	const body = trimmedContent
+	const body = normalized
 		.split("\n")
 		.map((l) => (l.trim() === "" ? ">" : `> ${l}`));
 	return [`> [!coo]- ${safeTitle}`, ...body].join("\n");

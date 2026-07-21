@@ -72,6 +72,15 @@ describe("getBlockActionSystemPrompt", () => {
 		expect(result).not.toContain("Always respond in");
 	});
 
+	it("instructs the model to use $…$ math delimiters, not TeX \\(…\\)", () => {
+		const result = getBlockActionSystemPrompt("en");
+		expect(result).toContain("display math");
+		// Backslashes must survive the template literal — the model should see
+		// the literal \(...\) it is told to avoid, not (...).
+		expect(result).toContain("\\(...\\)");
+		expect(result).toContain("\\[...\\]");
+	});
+
 	it("applies language directive for Chinese", () => {
 		const result = getBlockActionSystemPrompt("zh");
 		expect(result).toContain("Always respond in Simplified Chinese.");
@@ -103,6 +112,12 @@ describe("getRewriteSystemPrompt", () => {
 		const result = getRewriteSystemPrompt("en");
 		expect(result).toContain("revise a passage");
 		expect(result).not.toContain("Always respond in");
+	});
+
+	it("tells rewrite to keep math in $…$ / $$…$$ form", () => {
+		const result = getRewriteSystemPrompt("en");
+		expect(result).toContain("$$…$$");
+		expect(result).toContain("\\(...\\)");
 	});
 
 	it("applies language directive for Chinese", () => {

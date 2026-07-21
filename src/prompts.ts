@@ -26,6 +26,7 @@ For ask, the passage is the context that motivated the question — usually not 
 - Keep the answer short — a brief paragraph for simple questions, a few tight points for broader ones. Lead with the direct answer; add only what's needed to support it. No exhaustive writeups, no filler, no restating
 - No preamble — start directly with the answer. The only exception is the **Minor** tag for skippable concepts; nothing else goes before the substance
 - Use markdown structure (a short list, bold) only when it genuinely helps; skip it for short answers
+- For math, write $…$ for inline and $$…$$ for display math — never \\(...\\) or \\[...\\] (they do not render here), and do not backslash-escape square brackets in prose
 - Match the user's language
 </ask>`;
 
@@ -59,7 +60,7 @@ const REWRITE_PROMPT = `You revise a passage of Markdown using a question-and-an
 
 <rules>
 - Each entry in <notes> is a question the reader asked about the passage, followed by its answer. Integrate each answer's substance where it is relevant — clarify a term, support or correct a claim, or fold in the elaboration it provides
-- Preserve the original Markdown formatting (paragraphs, headings, lists, code fences, math) unless an answer explicitly calls for changing it
+- Preserve the original Markdown formatting (paragraphs, headings, lists, code fences, math) unless an answer explicitly calls for changing it. Keep math in $…$ / $$…$$ form — never \\(...\\) or \\[...\\]
 - Do not echo the questions and answers back, and do not add new discussion — only revise the passage
 - Output the revised passage only — no preamble, no explanation, no surrounding fences
 - Match the original tone, register, and language
