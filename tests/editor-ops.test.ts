@@ -3,6 +3,7 @@ import type { Editor, EditorPosition } from "obsidian";
 import {
 	findParagraphBounds,
 	findSelectionSpan,
+	resolveEditBounds,
 	extractMarkdownPrefix,
 	getParagraphText,
 	findCalloutBlocks,
@@ -15,6 +16,9 @@ import {
 	insertTranslationAfter,
 	highlightSelection,
 	normalizeMathDelimiters,
+	gatherEditContext,
+	getSurroundingParagraphs,
+	nextRevisionNumber,
 } from "../src/editor-ops";
 
 /**
@@ -50,8 +54,14 @@ class MockEditor {
 	lineCount(): number {
 		return this.lines.length;
 	}
+	getValue(): string {
+		return this.lines.join("\n");
+	}
 	getSelection(): string {
 		return this.selectedText;
+	}
+	somethingSelected(): boolean {
+		return this.selectedText.length > 0;
 	}
 	getCursor(which: "from" | "to" | "head" = "from"): EditorPosition {
 		return which === "to" ? this.cursorTo : this.cursorFrom;
@@ -688,5 +698,227 @@ describe("normalizeMathDelimiters", () => {
 
 	it("leaves plain text without delimiters as-is", () => {
 		expect(normalizeMathDelimiters("Hello world")).toBe("Hello world");
+	});
+});
+
+describe("gatherEditContext", () => {
+	it("collects a single guidelines line directly below the paragraph", () => {
+		const editor = new MockEditor({
+			lines: ["materials here", "", "%%keep it short, formal%%"],
+		});
+		const result = gatherEditContext(asEditor(editor), 0);
+		expect(result.guidelines).toBe("keep it short, formal");
+		expect(result.insertAfter).toBe(2);
+	});
+
+	it("returns empty guidelines and insertAfter at the paragraph when nothing follows", () => {
+		const editor = new MockEditor({ lines: ["materials here"] });
+		const result = gatherEditContext(asEditor(editor), 0);
+		expect(result.guidelines).toBe("");
+		expect(result.insertAfter).toBe(0);
+	});
+
+	it("collects multiple contiguous %%…%% lines", () => {
+		const editor = new MockEditor({
+			lines: ["materials", "", "%%line one%%", "%%line two%%"],
+		});
+		const result = gatherEditContext(asEditor(editor), 0);
+		expect(result.guidelines).toBe("line one\nline two");
+		expect(result.insertAfter).toBe(3);
+	});
+
+	it("stops collecting guidelines at the first non-%% line", () => {
+		const editor = new MockEditor({
+			lines: ["materials", "", "%%real guidelines%%", "some other text"],
+		});
+		const result = gatherEditContext(asEditor(editor), 0);
+		expect(result.guidelines).toBe("real guidelines");
+		expect(result.insertAfter).toBe(2);
+	});
+
+	it("inserts after the last existing revision callout", () => {
+		const editor = new MockEditor({
+			lines: [
+				"materials",
+				"",
+				"%%guidelines%%",
+				"",
+				"> [!coo-edit]- #1 old",
+				"> first revision",
+				"",
+				"> [!coo-edit]- #2 newer",
+				"> second revision",
+			],
+		});
+		const result = gatherEditContext(asEditor(editor), 0);
+		expect(result.guidelines).toBe("guidelines");
+		expect(result.insertAfter).toBe(8);
+	});
+
+	it("ignores [!coo] (Ask) callouts when finding the insertion point", () => {
+		const editor = new MockEditor({
+			lines: [
+				"materials",
+				"",
+				"%%guidelines%%",
+				"",
+				"> [!coo]- What is X?",
+				"> an answer",
+			],
+		});
+		const result = gatherEditContext(asEditor(editor), 0);
+		expect(result.guidelines).toBe("guidelines");
+		expect(result.insertAfter).toBe(2);
+	});
+
+	it("reports hasRevisions true only when [!coo-edit] revisions exist below", () => {
+		const none = new MockEditor({ lines: ["materials", "", "%%g%%"] });
+		expect(gatherEditContext(asEditor(none), 0).hasRevisions).toBe(false);
+
+		const withRevisions = new MockEditor({
+			lines: ["materials", "", "%%g%%", "", "> [!coo-edit]- #1 g", "> body"],
+		});
+		expect(gatherEditContext(asEditor(withRevisions), 0).hasRevisions).toBe(true);
+	});
+});
+
+describe("nextRevisionNumber", () => {
+	it("returns 1 when there are no revisions", () => {
+		const editor = new MockEditor({ lines: ["just a note", "", "%%guidelines%%"] });
+		expect(nextRevisionNumber(asEditor(editor))).toBe(1);
+	});
+
+	it("returns one higher than the highest existing revision number", () => {
+		const editor = new MockEditor({
+			lines: [
+				"> [!coo-edit]- #1 a",
+				"> body",
+				"",
+				"> [!coo-edit]- #3 c",
+				"> body",
+			],
+		});
+		expect(nextRevisionNumber(asEditor(editor))).toBe(4);
+	});
+
+	it("ignores numbers in [!coo] (Ask) callouts", () => {
+		const editor = new MockEditor({
+			lines: ["> [!coo]- #5 an ask answer", "> body"],
+		});
+		expect(nextRevisionNumber(asEditor(editor))).toBe(1);
+	});
+});
+
+describe("getSurroundingParagraphs", () => {
+	it("returns the prose paragraphs immediately before and after", () => {
+		const editor = new MockEditor({
+			lines: ["previous paragraph", "", "materials", "", "next paragraph"],
+		});
+		expect(
+			getSurroundingParagraphs(asEditor(editor), { startLine: 2, endLine: 2 }),
+		).toEqual({ before: "previous paragraph", after: "next paragraph" });
+	});
+
+	it("returns empty before when materials are at the top", () => {
+		const editor = new MockEditor({ lines: ["materials", "", "next"] });
+		expect(
+			getSurroundingParagraphs(asEditor(editor), { startLine: 0, endLine: 0 }),
+		).toEqual({ before: "", after: "next" });
+	});
+
+	it("returns empty after when materials are at the bottom", () => {
+		const editor = new MockEditor({ lines: ["prev", "", "materials"] });
+		expect(
+			getSurroundingParagraphs(asEditor(editor), { startLine: 2, endLine: 2 }),
+		).toEqual({ before: "prev", after: "" });
+	});
+
+	it("skips %%guidelines%% and [!coo-edit] revisions when finding the following paragraph", () => {
+		const editor = new MockEditor({
+			lines: [
+				"prev",
+				"",
+				"materials",
+				"",
+				"%%guidelines%%",
+				"",
+				"> [!coo-edit]- #1 g",
+				"> revision body",
+				"",
+				"the real next paragraph",
+			],
+		});
+		expect(
+			getSurroundingParagraphs(asEditor(editor), { startLine: 2, endLine: 2 }),
+		).toEqual({ before: "prev", after: "the real next paragraph" });
+	});
+
+	it("skips an Ask callout above the materials when finding the preceding paragraph", () => {
+		const editor = new MockEditor({
+			lines: [
+				"real prev",
+				"",
+				"> [!coo]- What is X?",
+				"> an answer",
+				"",
+				"materials",
+			],
+		});
+		expect(
+			getSurroundingParagraphs(asEditor(editor), { startLine: 5, endLine: 5 }),
+		).toEqual({ before: "real prev", after: "" });
+	});
+});
+
+describe("resolveEditBounds", () => {
+	it("uses the selection span when text is selected (multi-paragraph)", () => {
+		const editor = new MockEditor({
+			lines: ["intro", "", "- one", "- two", "- three", "", "after"],
+			selection: {
+				from: { line: 2, ch: 0 },
+				to: { line: 4, ch: 5 },
+				text: "- one\n- two\n- three",
+			},
+		});
+		expect(resolveEditBounds(asEditor(editor))).toEqual({
+			startLine: 2,
+			endLine: 4,
+		});
+	});
+
+	it("uses the cursor paragraph when nothing is selected", () => {
+		const editor = new MockEditor({
+			lines: ["one", "two", "three"],
+			cursor: { line: 1, ch: 0 },
+		});
+		expect(resolveEditBounds(asEditor(editor))).toEqual({
+			startLine: 0,
+			endLine: 2,
+		});
+	});
+
+	it("returns null when the cursor is on a %%guidelines%% line", () => {
+		const editor = new MockEditor({
+			lines: ["materials", "", "%%guidelines%%"],
+			cursor: { line: 2, ch: 0 },
+		});
+		expect(resolveEditBounds(asEditor(editor))).toBeNull();
+	});
+
+	it("walks back to the last paragraph when the selection ends on a %%…%% line", () => {
+		const editor = new MockEditor({
+			lines: ["- one", "- two", "", "%%guidelines%%"],
+			selection: {
+				from: { line: 0, ch: 0 },
+				to: { line: 3, ch: 14 },
+				text: "- one\n- two\n\n%%guidelines%%",
+			},
+		});
+		// Selection ends on the %%…%% line; findSelectionSpan walks up to the last
+		// real paragraph (line 1), so the guidelines line is excluded from the span.
+		expect(resolveEditBounds(asEditor(editor))).toEqual({
+			startLine: 0,
+			endLine: 1,
+		});
 	});
 });

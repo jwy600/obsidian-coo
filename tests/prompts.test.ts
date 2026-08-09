@@ -5,10 +5,12 @@ import {
 	getBlockActionSystemPrompt,
 	getTranslateSystemPrompt,
 	getRewriteSystemPrompt,
+	getEditSystemPrompt,
 	getRegisterDocumentPrompt,
 	buildAskInput,
 	buildRewriteInput,
 	buildTranslateInput,
+	buildEditInput,
 	parseMinorTag,
 } from "../src/prompts";
 
@@ -231,5 +233,76 @@ describe("buildTranslateInput", () => {
 	it("wraps the passage in <passage> tags and trims", () => {
 		const result = buildTranslateInput("  entanglement  ");
 		expect(result).toBe("<passage>\nentanglement\n</passage>");
+	});
+});
+
+describe("getEditSystemPrompt", () => {
+	it("contains the materials/guidelines scope with no language tag", () => {
+		const result = getEditSystemPrompt();
+		expect(result).toContain("<materials>");
+		expect(result).toContain("<guidelines>");
+		expect(result).toContain("<context>");
+		expect(result).toContain("faithful");
+		expect(result).not.toContain("<language>");
+		expect(result).not.toContain("Always respond in");
+	});
+
+	it("tells the model to keep math in $…$ / $$…$$ form", () => {
+		const result = getEditSystemPrompt();
+		expect(result).toContain("$$…$$");
+		expect(result).toContain("\\(...\\)");
+	});
+
+	it("tells the model to preserve all substance, not summarize it away", () => {
+		const result = getEditSystemPrompt();
+		expect(result).toContain("do not summarize away");
+		expect(result).toContain("survive into the passage");
+	});
+});
+
+describe("buildEditInput", () => {
+	it("includes materials, guidelines, and the revision number", () => {
+		const result = buildEditInput("fragments here", "keep it formal", 2);
+		expect(result).toContain("This is revision #2");
+		expect(result).toContain("<materials>");
+		expect(result).toContain("fragments here");
+		expect(result).toContain("<guidelines>");
+		expect(result).toContain("keep it formal");
+	});
+
+	it("omits the guidelines block when guidelines are empty", () => {
+		const result = buildEditInput("fragments", "  ", 1);
+		expect(result).toContain("<materials>");
+		expect(result).toContain("This is revision #1");
+		expect(result).not.toContain("<guidelines>");
+	});
+
+	it("trims materials and guidelines", () => {
+		const result = buildEditInput("  fragments  ", "  formal  ", 1);
+		expect(result).toContain("<materials>\nfragments\n</materials>");
+		expect(result).toContain("<guidelines>\nformal\n</guidelines>");
+	});
+
+	it("includes surrounding context when provided", () => {
+		const result = buildEditInput("materials", "formal", 1, {
+			before: "the previous paragraph",
+			after: "the next paragraph",
+		});
+		expect(result).toContain("<context>");
+		expect(result).toContain("Preceding paragraph:");
+		expect(result).toContain("the previous paragraph");
+		expect(result).toContain("Following paragraph:");
+		expect(result).toContain("the next paragraph");
+	});
+
+	it("omits the context block when context is absent", () => {
+		const result = buildEditInput("materials", "", 1);
+		expect(result).not.toContain("<context>");
+	});
+
+	it("marks a missing side as (none)", () => {
+		const result = buildEditInput("materials", "", 1, { before: "only before" });
+		expect(result).toContain("Preceding paragraph:\nonly before");
+		expect(result).toContain("Following paragraph:\n(none)");
 	});
 });

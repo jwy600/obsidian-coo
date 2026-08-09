@@ -1,5 +1,5 @@
 import type { App } from "obsidian";
-import type { CooSettings } from "./types";
+import type { CooSettings, ReasoningEffort } from "./types";
 import {
 	chatCompletion,
 	registerNote,
@@ -93,18 +93,23 @@ export interface AskChainedParams {
 	app: App;
 	pluginDir: string;
 	notePath: string;
-	/** Full note text, used to register the note on first Ask / re-register. */
+	/** Full note text, used to register the note on first use / re-register. */
 	noteText: string;
 	settings: CooSettings;
 	systemPrompt: string;
 	userPrompt: string;
+	/** Override reasoning effort; defaults to settings.reasoningEffort (Ask). */
+	reasoningEffort?: ReasoningEffort;
+	/** Override web search; defaults to settings.webSearchEnabled (Ask). */
+	webSearchEnabled?: boolean;
 }
 
 /**
- * Run an Ask, transparently registering the note on first use and chaining
- * from the stored head. If a chained call is rejected (HTTP 400 — typically an
- * expired/invalid response_id after OpenAI evicts the stored response), the
- * chain is reset and the Ask is retried once from a fresh registration.
+ * Run a chained call (Ask or Edit), transparently registering the note on first
+ * use and chaining from the stored head. If a chained call is rejected (HTTP
+ * 400 — typically an expired/invalid response_id after OpenAI evicts the stored
+ * response), the chain is reset and the call is retried once from a fresh
+ * registration.
  */
 export async function askChained(params: AskChainedParams): Promise<ResponseResult> {
 	const { app, pluginDir, notePath, noteText, settings, systemPrompt, userPrompt } = params;
@@ -120,8 +125,10 @@ export async function askChained(params: AskChainedParams): Promise<ResponseResu
 		systemPrompt,
 		userPrompt,
 		previousResponseId: head,
-		// Reasoning + web search follow the user's settings (Ask only — Rewrite/Translate are pinned off).
-		webSearchEnabled: settings.webSearchEnabled,
+		// Reasoning + web search default to the user's settings (Ask). Edit pins
+		// both off by passing overrides; Rewrite/Translate don't chain at all.
+		reasoningEffort: params.reasoningEffort,
+		webSearchEnabled: params.webSearchEnabled ?? settings.webSearchEnabled,
 	};
 
 	try {

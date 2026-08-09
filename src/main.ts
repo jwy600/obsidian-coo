@@ -4,6 +4,7 @@ import { DEFAULT_SETTINGS, CooSettingTab } from "./settings";
 import { detectObsidianLocale } from "./settings-utils";
 import { CooComposer } from "./composer-modal";
 import { performTranslate } from "./translate";
+import { performEdit } from "./edit";
 import { reRegisterNote } from "./chain";
 import {
 	getSelectedTextWithContext,
@@ -36,6 +37,15 @@ export default class CooPlugin extends Plugin {
 			},
 		});
 
+		// --- Edit: cursor in materials (guidelines in %%…%% below) → constructed [!coo-edit] revision ---
+		this.addCommand({
+			id: "edit",
+			name: "Edit",
+			editorCallback: (editor: Editor) => {
+				void this.runEdit(editor);
+			},
+		});
+
 		// --- Re-register note: refresh the chaining snapshot ---
 		this.addCommand({
 			id: "re-register",
@@ -48,6 +58,15 @@ export default class CooPlugin extends Plugin {
 		// --- Context menu ---
 		this.registerEvent(
 			this.app.workspace.on("editor-menu", (menu, editor) => {
+				// Edit is cursor-based (the materials paragraph at the cursor), so it
+				// appears without a selection. Discuss and Translate need a selection.
+				menu.addItem((item) => {
+					item.setTitle("coo edit")
+						.setIcon("sparkles")
+						.onClick(() => {
+							void this.runEdit(editor);
+						});
+				});
 				if (!editor.somethingSelected()) return;
 				menu.addItem((item) => {
 					item.setTitle("coo discuss")
@@ -193,6 +212,24 @@ export default class CooPlugin extends Plugin {
 					: "Re-registration failed.";
 			new Notice(message, 5000);
 		}
+	}
+
+	private async runEdit(editor: Editor): Promise<void> {
+		if (!this.requireApiKey()) return;
+
+		const file = this.app.workspace.getActiveFile();
+		if (!file) {
+			new Notice("Open a note first.");
+			return;
+		}
+
+		await performEdit(
+			this.app,
+			editor,
+			this.settings,
+			this.manifest.dir ?? "",
+			file.path,
+		);
 	}
 
 	/**

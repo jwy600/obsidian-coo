@@ -2,7 +2,7 @@
 
 ## What is this?
 
-An Obsidian plugin that brings AI-powered discussion and translation into your notes, grounded in the note you're editing. Inspired by **Coo** (a personalized wiki built on chat), this plugin lets you discuss a selected paragraph with an LLM (answers become notes you can fold back in via Rewrite), translate a word or phrase inline, and chain follow-up questions using OpenAI's stored `previous_response_id`.
+An Obsidian plugin that brings AI-powered discussion, translation, and writing into your notes, grounded in the note you're editing. Inspired by **Coo** (a personalized wiki built on chat), this plugin lets you discuss a selected paragraph with an LLM (answers become notes you can fold back in via Rewrite), translate a word or phrase inline, construct a coherent passage from the rough fragments of a thought (Edit), and chain follow-up questions using OpenAI's stored `previous_response_id`.
 
 ### Reference app: `~/coo-app-next`
 
@@ -36,6 +36,7 @@ The original Coo web app (Next.js + React + Zustand + OpenAI). This plugin ports
 - **Composer modal over the note** — the modal is a command bar (question input + Ask + Rewrite); all AI output writes straight into the note, not into the modal
 - **Collapsed callout notes** — Ask answers stored as `[!coo]` Obsidian callouts below the paragraph (question as title, answer as body; markdown renders when expanded), consumed by Rewrite
 - **Inline Translate** — bracketed translation inserted right after the selection, per word/phrase
+- **Edit revisions** — constructed passages stored as `[!coo-edit]` callouts below the materials (numbered, chained, manually curated); guidelines stashed in `%%…%%` comments on the line beneath
 - **Per-note chain storage** — the chain head (`response_id`) stored in a plugin-side JSON file keyed by note path
 
 ## Tech stack
@@ -61,16 +62,17 @@ npm test             # vitest
 
 ```
 src/
-  main.ts            # Plugin lifecycle + 3 commands + context menu + legacy cleanup
+  main.ts            # Plugin lifecycle + 4 commands + context menu + legacy cleanup
   settings.ts        # CooSettingTab (6 settings), DEFAULT_SETTINGS, re-exports utils
   settings-utils.ts  # Pure functions: locale detection, language conflict checks
   types.ts           # Shared types + LANGUAGE_MAP, *_MAP
-  prompts.ts         # Ported prompts (block-action/translate/rewrite/register) + language tags + input builders
+  prompts.ts         # Ported prompts (block-action/translate/rewrite/register) + Edit prompt + language tags + input builders
   ai-client.ts       # Responses API: chatCompletion (text+responseId), registerNote, parseResponse, CooApiError
-  chain.ts           # Per-note chaining: askChained, reRegisterNote, chain-head storage in chain-data.json
+  chain.ts           # Per-note chaining: askChained (Ask + Edit), reRegisterNote, chain-head storage in chain-data.json
   translate.ts       # Standalone Translate action (inline bracketed insertion)
+  edit.ts            # Standalone Edit action (constructs a passage from materials + %%…%% guidelines → [!coo-edit] revision)
   composer-modal.ts  # Discuss modal: Ask (selection-aware/drill-down, chained, auto-closes) + Rewrite
-  editor-ops.ts      # Paragraph/callout detection + CRUD, drill-down targeting, translate insertion, selection highlight, math-delimiter normalization
+  editor-ops.ts      # Paragraph/callout detection + CRUD, drill-down targeting, Edit guidelines/numbering, translate insertion, selection highlight, math-delimiter normalization
 ```
 
 Output: `main.js` + `manifest.json` + `styles.css` at repo root (loaded by Obsidian).
@@ -79,19 +81,20 @@ Output: `main.js` + `manifest.json` + `styles.css` at repo root (loaded by Obsid
 
 | File | Purpose |
 |------|---------|
-| `src/main.ts` | `CooPlugin`: `onload` registers 3 commands (`discuss`, `translate`, `re-register`) + editor context menu + legacy prompt cleanup. Helpers `openDiscuss()`, `reRegister()` |
+| `src/main.ts` | `CooPlugin`: `onload` registers 4 commands (`discuss`, `translate`, `edit`, `re-register`) + editor context menu + legacy prompt cleanup. Helpers `openDiscuss()`, `runEdit()`, `reRegister()` |
 | `src/settings.ts` | `DEFAULT_SETTINGS`, `CooSettingTab` with 6 settings, re-exports from `settings-utils` |
 | `src/settings-utils.ts` | `mapLocaleToResponseLanguage()`, `detectObsidianLocale()`, `isLanguageConflict()`, `getDefaultTranslateLanguage()` |
 | `src/ai-client.ts` | `chatCompletion()` (returns `{ text, responseId }`), `registerNote()` (priming call → root id), `parseResponse()`, `CooApiError`. Supports `previousResponseId`, `store`, per-call `reasoningEffort`/`webSearchEnabled` overrides |
-| `src/prompts.ts` | Ported `BLOCK_ACTION_PROMPT` (`<scope>`/`<transformations>`/`<ask>`), `BLOCK_ACTION_TRANSLATE_PROMPT`, `REWRITE_PROMPT`, `REGISTER_DOC_PROMPT`. `replaceLanguageTag()` / `replaceTranslationLanguageTag()`. Input builders `buildAskInput()`, `buildRewriteInput()`, `buildTranslateInput()` |
-| `src/chain.ts` | Per-note chaining: `askChained()` (registers on first Ask, chains, retries on expired id), `reRegisterNote()`, `getChainHead`/`setChainHead`/`clearChain` (persisted in `chain-data.json`) |
+| `src/prompts.ts` | Ported `BLOCK_ACTION_PROMPT` (`<scope>`/`<transformations>`/`<ask>`), `BLOCK_ACTION_TRANSLATE_PROMPT`, `REWRITE_PROMPT`, `REGISTER_DOC_PROMPT`, plus the Obsidian-native `EDIT_PROMPT`. `replaceLanguageTag()` / `replaceTranslationLanguageTag()`. Input builders `buildAskInput()`, `buildRewriteInput()`, `buildTranslateInput()`, `buildEditInput()` |
+| `src/chain.ts` | Per-note chaining: `askChained()` (registers on first Ask/Edit, chains, retries on expired id; optional `reasoningEffort`/`webSearchEnabled` overrides — Edit pins both off), `reRegisterNote()`, `getChainHead`/`setChainHead`/`clearChain` (persisted in `chain-data.json`) |
 | `src/translate.ts` | `performTranslate()` — captures selection, calls Translate, inserts `(translation)` after the selection |
+| `src/edit.ts` | `performEdit()` — selection-or-cursor materials + `%%…%%` guidelines below → constructs a passage, appends a numbered `[!coo-edit]` revision callout (chains) |
 | `src/composer-modal.ts` | Discuss modal: passage preview + question input + Ask + Rewrite. Ask writes `[!coo]` callouts to the note (chained, closes after each Ask); drill-down mode targets a selection inside an answer callout; Rewrite folds callouts into the paragraph (one-shot) |
-| `src/editor-ops.ts` | `findParagraphBounds()`, `findSelectionSpan()`, `getParagraphText()`, `extractMarkdownPrefix()`, callout CRUD + drill-down (`findCalloutBlocks`, `findCalloutContaining`, `getCalloutQaPairs`, `getCalloutBody`, `appendCallout`, `appendCalloutAfter`, `replaceParagraphAndRemoveCallouts`), `normalizeMathDelimiters()`, `insertTranslationAfter()`, `highlightSelection()` |
+| `src/editor-ops.ts` | `findParagraphBounds()`, `findSelectionSpan()`, `resolveEditBounds()`, `getParagraphText()`, `extractMarkdownPrefix()`, callout CRUD + drill-down (`findCalloutBlocks`, `findCalloutContaining`, `getCalloutQaPairs`, `getCalloutBody`, `appendCallout`, `appendCalloutAfter` (with `CalloutType` for `[!coo]`/`[!coo-edit]`), `replaceParagraphAndRemoveCallouts`), Edit helpers (`gatherEditContext`, `getSurroundingParagraphs`, `nextRevisionNumber`), `normalizeMathDelimiters()`, `insertTranslationAfter()`, `highlightSelection()` |
 | `manifest.json` | Plugin metadata (`coo`) |
-| `styles.css` | Composer modal, Ask/Rewrite buttons, passage preview |
+| `styles.css` | Composer modal, Ask/Rewrite buttons, passage preview, `[!coo]` / `[!coo-edit]` callout accents |
 
-## Two features + chaining
+## Three features + chaining
 
 ### Discuss
 Select text in a paragraph → command palette or right-click → composer modal (passage preview + question input + Ask + Rewrite). **The modal is the command bar; the note is the canvas** — AI output writes into the note, not the modal. With **nothing selected**, the whole document becomes the scope instead (whole-document mode).
@@ -105,15 +108,24 @@ Select text in a paragraph → command palette or right-click → composer modal
 ### Translate
 Select a word or phrase → command palette or right-click → the translation is inserted inline, bracketed `( )`, immediately after the selection. The original text is preserved. One editor op (Ctrl+Z reverts). Does not chain.
 
+### Edit
+Place the cursor in the **materials** — the rough fragments of a thought you can't yet articulate — and run `coo:Edit` (command palette or right-click; no modal). To construct from a multi-paragraph block (a whole list, several paragraphs), **select** it instead. Any **guidelines** go in a `%%…%%` comment on the line directly below the materials. Edit **constructs** a coherent passage (faithful to the thought — it connects and elaborates but never invents substance, and preserves every point rather than summarizing it away; matches the surrounding note's voice; fully expressed, no padding) and appends it as a collapsed `[!coo-edit]` **revision** callout beneath the input.
+
+- The materials and guidelines are **never overwritten** — the revision lands in a callout, so you curate by hand (lift what you want, delete the callout). There is no "apply" action.
+- Revisions are **numbered** globally per note (`#1`, `#2`, …, never reused) and **chain** (sharing the note's Ask conversation root), so later guidelines can reference a prior revision by number (e.g. `%%refine revision #2 to be shorter%%`).
+- The immediate **before/after paragraphs** are sent as `<context>` (`getSurroundingParagraphs`) **only on the first edit of a paragraph** (`hasRevisions` from `gatherEditContext`); later revisions inherit them via the chain. The model constructs only from the materials, never the context.
+- A cursor or selection on a `%%…%%` line (or a blank/heading/callout line) yields no materials — `resolveEditBounds` returns null — so you can't "edit a guideline" by mistake.
+- Edit pins reasoning and web search off (construction needs neither). One editor op (Ctrl+Z reverts).
+
 ### Re-register note
 Refreshes the chaining snapshot: re-registers the whole note (new root id) and resets the chain. Use after heavily editing the note — otherwise the registered context drifts stale.
 
 ## Chaining
 
-Each note has a conversation root. On the first Ask, the whole note is sent to OpenAI with `store: true` and the `REGISTER_DOC_PROMPT`; the returned `response_id` (R0) is stored in `chain-data.json` keyed by note path. Each Ask passes `previous_response_id: <last>` and advances the stored head, so follow-up questions accumulate context server-side.
+Each note has a conversation root. On the first Ask or Edit, the whole note is sent to OpenAI with `store: true` and the `REGISTER_DOC_PROMPT`; the returned `response_id` (R0) is stored in `chain-data.json` keyed by note path. Each Ask/Edit passes `previous_response_id: <last>` and advances the stored head, so follow-up turns accumulate context server-side.
 
-- Only **Ask** chains. Rewrite and Translate are one-shot.
-- If a chained call is rejected (HTTP 400 — typically an expired `response_id` after OpenAI evicts the stored response), the chain resets and the Ask retries once from a fresh registration.
+- **Ask** and **Edit** chain. Rewrite and Translate are one-shot.
+- If a chained call is rejected (HTTP 400 — typically an expired `response_id` after OpenAI evicts the stored response), the chain resets and the call retries once from a fresh registration.
 - **Re-register note** captures a fresh snapshot and resets the chain (prior Q&A context drops).
 - The registered snapshot is a point-in-time copy of the note. The passage you Ask about is always sent fresh; the broad note context can drift if you edit heavily (that's what re-register is for).
 
@@ -143,14 +155,35 @@ Some paragraph text that the user discussed with AI.
 - Styled via `.callout[data-callout="coo"]` in `styles.css`.
 - Legacy `%%…%%` annotations (older plugin versions) are treated as paragraph boundaries but are no longer read by Rewrite — re-ask to regenerate them as callouts.
 
+### Edit revisions (`[!coo-edit]`)
+
+Each Edit construction is stored as a collapsed `[!coo-edit]` callout beneath the materials (+ guidelines), distinct from `[!coo]` Ask notes:
+
+```markdown
+fragments of a thought the user couldn't yet articulate
+
+%%keep it under three sentences, formal%%
+
+> [!coo-edit]- #1 keep it under three sentences, formal
+> The constructed passage, with **markdown** that renders.
+```
+
+- `appendCalloutAfter(..., "coo-edit")` writes a revision callout — the `calloutType` param selects `[!coo]` vs `[!coo-edit]`.
+- `gatherEditContext()` reads the `%%…%%` guidelines directly below the materials, finds where the new revision should insert (after the guidelines, then after any existing `[!coo-edit]` revisions so they stack in order), and reports whether revisions already exist (`hasRevisions`).
+- `nextRevisionNumber()` returns one higher than the highest `#N` among existing `[!coo-edit]` titles — global per note, never reused.
+- `getSurroundingParagraphs()` returns the prose paragraphs immediately before/after the materials (skipping `%%…%%` guidelines and `[!coo-edit]` revisions), sent as `<context>` on the paragraph's first edit so the model matches local flow and voice.
+- `[!coo-edit]` is invisible to Rewrite and drill-down: `isCalloutStart` matches only the literal `[!coo]`, so a revision callout is never read as a Q&A note or treated as a drillable answer.
+- `%%…%%` doubles as Edit's guidelines vehicle — a line whose trimmed content is wrapped in `%%…%%` (`isAnnotationLine`), still a paragraph boundary, now also read by Edit.
+- Styled via `.callout[data-callout="coo-edit"]` in `styles.css` (teal accent, distinct from the purple `[!coo]`).
+
 ## Settings
 
 | Setting | Type | Default | Notes |
 |---------|------|---------|-------|
 | OpenAI API key | password input | `''` | Required. Stored locally via `saveData()` |
 | Model | dropdown | `gpt-5.6-terra` | `gpt-5.6-sol` / `gpt-5.6-terra` / `gpt-5.6-luna` |
-| Reasoning effort | dropdown | `low` | `none` / `low` / `medium` / `high` — applies to Ask only |
-| Web search | toggle | `true` | Scopes to Ask only. Sends `tools: [{ type: 'web_search' }]` |
+| Reasoning effort | dropdown | `low` | `none` / `low` / `medium` / `high` — applies to Ask only (Edit pins it off) |
+| Web search | toggle | `true` | Scopes to Ask only (Edit pins it off). Sends `tools: [{ type: 'web_search' }]` |
 | Response language | dropdown | `en` | `en` / `es` / `fr` / `zh` / `ja` — auto-detected from Obsidian locale on first use. Fills the `<language>` tag at runtime |
 | Translation language | dropdown | `Chinese` | Target for Translate. Cannot be the same as response language (auto-adjusted on conflict) |
 
@@ -162,6 +195,7 @@ Prompts are ported from coo-app-next and stored language-neutral as inline strin
 
 - **`<language></language>` tag** (block-action, rewrite prompts): `replaceLanguageTag()` fills it with "Always respond in {language}." for non-English, or removes it for English.
 - **`<translationlanguage></translationlanguage>` tag** (translate prompt): `replaceTranslationLanguageTag()` fills it with "Translate into {language}." or removes it for English.
+- **No language tag** (Edit prompt): `getEditSystemPrompt()` returns the prompt verbatim — Edit constructs in the materials' own language (editing is not translation).
 - Translate uses the translation target language, independent of response language.
 
 ### Input builders
@@ -169,13 +203,14 @@ Prompts are ported from coo-app-next and stored language-neutral as inline strin
 - `buildAskInput(passage, selection, question)` → `Answer this question about the passage.` preamble + `Question:` first, then `<passage>`, then the highlighted selection (matches coo-app-next's ordering; the highlight is appended after the passage). The passage is a paragraph normally, or an answer body when drilling down.
 - `buildRewriteInput(passage, notes)` → `<passage>` + `<notes>` as Q&A pairs (`Q: …` / `A: …`), so the model knows what each answer addresses.
 - `buildTranslateInput(passage)` → `<passage>` (the selected text).
+- `buildEditInput(materials, guidelines, revisionNumber, context?)` → `<materials>` + optional `<guidelines>` + optional `<context>` (the before/after paragraphs) + `This is revision #N` (the number labels the chained turn so later guidelines can reference it).
 
 ## API client details
 
 - **Endpoint**: `POST https://api.openai.com/v1/responses` (Responses API)
 - **Non-streaming only**: `chatCompletion()` calls `requestUrl` (via `apiFetch`), parses `id` (responseId) + `output_text` (falls back to `output[].content[].text`)
-- **Chaining**: `previous_response_id` + `store: true` (set per call — Ask/register store; Rewrite/Translate don't)
-- **Per-call overrides**: `reasoningEffort` and `webSearchEnabled` can override settings (Ask → reasoning per setting + follows the web-search toggle; Rewrite/Translate/Register → no reasoning, no web search)
+- **Chaining**: `previous_response_id` + `store: true` (set per call — Ask/Edit/register store; Rewrite/Translate don't)
+- **Per-call overrides**: `reasoningEffort` and `webSearchEnabled` can override settings (Ask → reasoning per setting + follows the web-search toggle; Edit → no reasoning, no web search, via `askChained` overrides; Rewrite/Translate/Register → no reasoning, no web search)
 - **Errors**: `CooApiError` carries the HTTP status so callers can react (e.g. expired-id retry on 400). HTTP codes mapped to user-friendly notices.
 - Uses Obsidian's `requestUrl` with `throw: false` so 4xx/5xx responses come back (status + body) instead of throwing — letting `callApi` read the error body and map HTTP codes to notices. (`fetch` is blocked by the `no-restricted-globals` lint rule.)
 
@@ -198,7 +233,7 @@ npm run build        # tsc -noEmit (includes tests) + esbuild bundle
 npm run lint         # eslint
 ```
 
-Tests (`tests/`): `editor-ops`, `ai-client` (`parseResponse`, `CooApiError`), `prompts` (language tags, input builders), `chain` (chain-head storage), `settings` (locale + conflict utils). `editor-ops` tests use a mock Editor that faithfully implements `replaceRange`. The `obsidian` package is aliased to `tests/stubs/obsidian.ts` (`vitest.config.ts`) so modules importing `requestUrl` as a runtime value load under vitest.
+Tests (`tests/`): `editor-ops` (paragraph/callout/Edit-guidelines/numbering), `ai-client` (`parseResponse`, `CooApiError`), `prompts` (language tags, input builders incl. Edit), `chain` (chain-head storage), `settings` (locale + conflict utils). `editor-ops` tests use a mock Editor that faithfully implements `replaceRange` (and `getValue`). The `obsidian` package is aliased to `tests/stubs/obsidian.ts` (`vitest.config.ts`) so modules importing `requestUrl` as a runtime value load under vitest.
 
 ### Manual deployment
 ```bash

@@ -54,11 +54,31 @@ function isAnnotationLine(line: string): boolean {
 }
 
 /**
+ * Strip the leading/trailing %% markers from an annotation line, returning the
+ * guidelines text inside. Assumes the line is an annotation (isAnnotationLine).
+ */
+function stripAnnotationMarkers(line: string): string {
+	return line.trim().replace(/^%%/, "").replace(/%%$/, "").trim();
+}
+
+/**
  * Check if a line starts a coo note callout: "> [!coo]" (optionally with
  * +/- and a title). Case-insensitive on the callout type.
  */
 function isCalloutStart(line: string): boolean {
 	return /^>\s*\[!coo\]/i.test(line);
+}
+
+/** The two callout types coo writes: Ask notes ([!coo]) and Edit revisions ([!coo-edit]). */
+export type CalloutType = "coo" | "coo-edit";
+
+/**
+ * Check if a line starts an Edit revision callout: "> [!coo-edit]". Deliberately
+ * distinct from isCalloutStart ([!coo]) — Rewrite and drill-down match only
+ * [!coo], so [!coo-edit] revisions are invisible to them.
+ */
+function isEditCalloutStart(line: string): boolean {
+	return /^>\s*\[!coo-edit\]/i.test(line);
 }
 
 /**
@@ -173,6 +193,24 @@ export function findSelectionSpan(
 	}
 	if (!end) return start;
 	return { startLine: start.startLine, endLine: Math.max(start.endLine, end.endLine) };
+}
+
+/**
+ * Resolve the Edit materials bounds: if the user selected a span, use it (so a
+ * multi-paragraph block — a list, several paragraphs — can be edited as one
+ * unit); otherwise use the paragraph at the cursor. Returns null when the
+ * cursor/selection sits on a boundary line (blank, %%…%%, heading, or callout),
+ * i.e. there are no materials to construct from.
+ */
+export function resolveEditBounds(editor: Editor): ParagraphBounds | null {
+	if (editor.somethingSelected()) {
+		return findSelectionSpan(
+			editor,
+			editor.getCursor("from"),
+			editor.getCursor("to"),
+		);
+	}
+	return findParagraphBounds(editor, editor.getCursor("from").line);
 }
 
 /**
@@ -368,7 +406,11 @@ export function normalizeMathDelimiters(text: string): string {
  * Math delimiters are normalized first so formulas render in the note. Shared
  * by appendCallout and appendCalloutAfter.
  */
-function formatCalloutBlock(title: string, content: string): string {
+function formatCalloutBlock(
+	title: string,
+	content: string,
+	calloutType: CalloutType = "coo",
+): string {
 	const safeTitle = title.replace(/\n+/g, " ").trim() || "note";
 	const normalized = normalizeMathDelimiters(content.trim());
 	if (!normalized) return "";
@@ -376,7 +418,7 @@ function formatCalloutBlock(title: string, content: string): string {
 	const body = normalized
 		.split("\n")
 		.map((l) => (l.trim() === "" ? ">" : `> ${l}`));
-	return [`> [!coo]- ${safeTitle}`, ...body].join("\n");
+	return [`> [!${calloutType}]- ${safeTitle}`, ...body].join("\n");
 }
 
 /**
@@ -434,13 +476,134 @@ export function appendCalloutAfter(
 	afterLine: number,
 	title: string,
 	content: string,
+	calloutType: CalloutType = "coo",
 ): void {
-	const blockText = formatCalloutBlock(title, content);
+	const blockText = formatCalloutBlock(title, content, calloutType);
 	if (!blockText) return;
 
 	const lineText = editor.getLine(afterLine);
 	const insertPos = { line: afterLine, ch: lineText.length };
 	editor.replaceRange(`\n\n${blockText}${trailingSeparator(editor, afterLine)}`, insertPos);
+}
+
+/**
+ * Gather the Edit context for a paragraph: any guidelines (%%…%% lines directly
+ * below it), the line after which a new revision callout should be inserted
+ * (after the guidelines block, then after any existing [!coo-edit] revisions so
+ * new ones stack in order), and whether any revisions already exist below
+ * (hasRevisions — true means this is NOT the paragraph's first edit, so the
+ * surrounding context need not be re-sent; the chain already carries it).
+ * Guidelines are the contiguous %%…%% lines immediately below the paragraph
+ * (blank lines skipped); the scan stops at the first non-blank, non-%% line.
+ */
+export function gatherEditContext(
+	editor: Editor,
+	paragraphEndLine: number,
+): { guidelines: string; insertAfter: number; hasRevisions: boolean } {
+	const total = editor.lineCount();
+	let i = paragraphEndLine + 1;
+
+	// Skip blanks, then collect contiguous %%…%% guideline lines.
+	while (i < total && isEmptyLine(editor.getLine(i))) i++;
+	let guidelinesEndLine = paragraphEndLine;
+	const guidelinesLines: string[] = [];
+	while (i < total && isAnnotationLine(editor.getLine(i))) {
+		guidelinesLines.push(stripAnnotationMarkers(editor.getLine(i)));
+		guidelinesEndLine = i;
+		i++;
+	}
+	const guidelines = guidelinesLines.join("\n").trim();
+
+	// Skip blanks, then collect contiguous [!coo-edit] revision callouts so a new
+	// revision stacks after the last one.
+	while (i < total && isEmptyLine(editor.getLine(i))) i++;
+	let lastCalloutEnd = -1;
+	while (i < total && isEditCalloutStart(editor.getLine(i))) {
+		i++; // title
+		while (i < total && editor.getLine(i).startsWith(">")) i++; // body
+		lastCalloutEnd = i - 1;
+		while (i < total && isEmptyLine(editor.getLine(i))) i++;
+	}
+
+	const hasRevisions = lastCalloutEnd >= 0;
+	const insertAfter = hasRevisions ? lastCalloutEnd : guidelinesEndLine;
+	return { guidelines, insertAfter, hasRevisions };
+}
+
+/**
+ * The next global revision number for the note: one higher than the highest #N
+ * in any existing [!coo-edit] revision title. Numbers are per-note and never
+ * reused, so deleting a revision never recycles its number.
+ */
+export function nextRevisionNumber(editor: Editor): number {
+	const matches = editor.getValue().match(/\[!coo-edit\][-+]?\s*#(\d+)/gi);
+	if (!matches) return 1;
+	let max = 0;
+	for (const m of matches) {
+		const n = Number(m.match(/#(\d+)/)?.[1]);
+		if (!Number.isNaN(n) && n > max) max = n;
+	}
+	return max + 1;
+}
+
+/**
+ * A line to skip when locating the neighboring prose paragraphs around the
+ * materials: blanks, %%…%% guidelines, headings, and blockquote/callout lines
+ * (Ask notes and Edit revisions are scaffolding, not prose).
+ */
+function isContextBoundary(line: string): boolean {
+	return (
+		isEmptyLine(line) ||
+		isAnnotationLine(line) ||
+		isHeading(line) ||
+		line.startsWith(">")
+	);
+}
+
+/**
+ * The prose paragraphs immediately before and after the materials, for local
+ * context (flow, register, voice). Scaffolding between them — %%…%% guidelines
+ * and [!coo-edit] revisions below, Ask notes/callouts above — is skipped, so
+ * only real neighboring prose is returned. Either may be "" when the materials
+ * sit at the top/bottom of the note or border only non-prose lines. Each is
+ * capped so a very long neighbor can't bloat the prompt.
+ */
+export function getSurroundingParagraphs(
+	editor: Editor,
+	bounds: { startLine: number; endLine: number },
+): { before: string; after: string } {
+	const total = editor.lineCount();
+	const cap = (s: string): string =>
+		s.length > 500 ? `${s.slice(0, 500)}…` : s;
+
+	// Previous paragraph: walk up past boundary lines, then up through the
+	// paragraph's own contiguous lines to its start.
+	let before = "";
+	let i = bounds.startLine - 1;
+	while (i >= 0 && isContextBoundary(editor.getLine(i))) i--;
+	if (i >= 0) {
+		let start = i;
+		while (start - 1 >= 0 && !isContextBoundary(editor.getLine(start - 1))) {
+			start--;
+		}
+		before = cap(getParagraphText(editor, start, i).trim());
+	}
+
+	// Next paragraph: walk down past boundary lines (this skips the guidelines
+	// and any [!coo-edit] revisions directly below), then down through the
+	// paragraph's own contiguous lines to its end.
+	let after = "";
+	let j = bounds.endLine + 1;
+	while (j < total && isContextBoundary(editor.getLine(j))) j++;
+	if (j < total) {
+		let end = j;
+		while (end + 1 < total && !isContextBoundary(editor.getLine(end + 1))) {
+			end++;
+		}
+		after = cap(getParagraphText(editor, j, end).trim());
+	}
+
+	return { before, after };
 }
 
 /**

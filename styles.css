@@ -7,6 +7,14 @@
 	--callout-icon: message-square;
 }
 
+/* ---- coo-edit revision callout (Edit constructions) ---- */
+/* Distinct accent from [!coo] so a constructed revision is visually
+   distinguishable from an Ask explanation. Collapsed by default, like [!coo]. */
+.callout[data-callout="coo-edit"] {
+	--callout-color: 0, 184, 148;
+	--callout-icon: sparkles;
+}
+
 /* ---- Composer modal — translucent backdrop, pinned to bottom ---- */
 
 /* `.coo-composer-open` is added to the .modal-container in onOpen() so these

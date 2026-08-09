@@ -67,6 +67,35 @@ const REWRITE_PROMPT = `You revise a passage of Markdown using a question-and-an
 </rules>`;
 
 /**
+ * Edit prompt. Constructs a coherent passage from the author's materials (rough
+ * fragments of a thought), following any guidelines. Faithful construction:
+ * connect, structure, and elaborate to complete the idea — but never invent
+ * substance the fragments don't support. No <language> tag: Edit constructs in
+ * the materials' own language (this is not translation). See CONTEXT.md (Edit,
+ * Materials, Guidelines) and docs/adr/0001-edit-constructs-from-fragments.md.
+ */
+const EDIT_PROMPT = `You construct a coherent passage of Markdown from the author's materials, faithfully expressing the thought they couldn't yet articulate, following any guidelines they give.
+
+<scope>
+- The text inside <materials>...</materials> is the author's fragments — rough pieces of a single thought, not finished prose
+- The materials are always the author's original fragments — construct from those, not from a prior revision, unless the guidelines explicitly build on a numbered revision
+- Prior conversation turns (via response chaining) hold the passages you constructed earlier, each labeled with its number (e.g. "revision #2"). If the guidelines refer to one by number (e.g. "reuse the opening from revision #2"), resolve it from those turns — do not re-derive it from the fragments
+- The <guidelines>...</guidelines> block, when present, holds the author's editing direction (tone, length, focus, or references to prior revisions). Follow it
+- The <context> block, when present, holds the prose paragraphs immediately before and after the materials. Use them to match flow, register, and voice so the passage continues from the preceding paragraph and leads into the following one — but construct only from the <materials>; never repeat or incorporate the surrounding paragraphs' substance
+</scope>
+
+<rules>
+- Turn the materials into a coherent passage that fully expresses the thought: connect the pieces, structure them, and elaborate as much as is needed to complete the idea — but no more. Do not pad, repeat, or elaborate for its own sake
+- Stay faithful to the thought. You may add connective tissue and structure; never invent claims, examples, facts, or emphasis the materials do not support
+- Preserve all of the materials' substance: reorganize and connect the points as flowing prose, but do not summarize away, omit, or merge any distinct detail — every claim, step, and fact should survive into the passage. (If the guidelines explicitly ask to summarize or shorten, follow them instead.)
+- Match the voice and register of the surrounding note, so the passage reads like the author wrote it — unless the guidelines ask for a different tone
+- With no guidelines, construct the thought fully and naturally. With guidelines, follow them
+- Construct in the language the materials are written in (this is not translation)
+- Preserve any Markdown formatting the materials imply (lists, code, math) where it still fits; keep math in $…$ / $$…$$ — never \\(...\\) or \\[...\\]
+- Output the constructed passage only — no preamble, no explanation, no surrounding code fences
+</rules>`;
+
+/**
  * Registration prompt (ported from coo-app-next).
  * Primes the model with the whole note so later asks can chain from it.
  * No language tag — the acknowledgment language is not important (text is discarded).
@@ -136,6 +165,11 @@ export function getRewriteSystemPrompt(lang: ResponseLanguage): string {
 	return replaceLanguageTag(REWRITE_PROMPT, lang);
 }
 
+/** Edit system prompt. No language tag — Edit constructs in the materials' own language. */
+export function getEditSystemPrompt(): string {
+	return EDIT_PROMPT;
+}
+
 /** Registration prompt (no language tag). */
 export function getRegisterDocumentPrompt(): string {
 	return REGISTER_DOC_PROMPT;
@@ -200,6 +234,31 @@ export function buildRewriteInput(
 		.map((n) => `Q: ${n.question}\nA: ${n.answer}`)
 		.join("\n\n");
 	return `${passageBlock}\n\n<notes>\n${noteBlock}\n</notes>`;
+}
+
+/**
+ * Build the Edit input: the materials (fragments) as <materials>, the guidelines
+ * (when present) as <guidelines>, and the revision number so the chained turn is
+ * labeled — later guidelines can reference "revision #N". The materials are
+ * always the author's original fragments; prior revisions arrive via chaining.
+ */
+export function buildEditInput(
+	materials: string,
+	guidelines: string,
+	revisionNumber: number,
+	context?: { before?: string; after?: string },
+): string {
+	const materialsBlock = `<materials>\n${materials.trim()}\n</materials>`;
+	const guidelinesBlock = guidelines.trim()
+		? `\n\n<guidelines>\n${guidelines.trim()}\n</guidelines>`
+		: "";
+	const before = context?.before?.trim() ?? "";
+	const after = context?.after?.trim() ?? "";
+	const contextBlock =
+		before || after
+			? `\n\n<context>\nPreceding paragraph:\n${before || "(none)"}\n\nFollowing paragraph:\n${after || "(none)"}\n</context>`
+			: "";
+	return `Construct a passage from the materials below, following any guidelines. This is revision #${revisionNumber}.\n\n${materialsBlock}${guidelinesBlock}${contextBlock}`;
 }
 
 /** Build the Translate input: the selected text as <passage>. */
