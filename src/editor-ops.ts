@@ -61,6 +61,81 @@ function stripAnnotationMarkers(line: string): string {
 	return line.trim().replace(/^%%/, "").replace(/%%$/, "").trim();
 }
 
+/** An editing note the author embedded in the materials via %%…%%. */
+export interface EditNote {
+	/**
+	 * "[§N]" for an inline note — a marker is left at its position in the
+	 * cleaned materials so the model knows where it applies. Undefined for a
+	 * whole-passage note (trailing or below-paragraph).
+	 */
+	marker?: string;
+	/** The note text, with the %%…%% wrappers stripped and trimmed. */
+	note: string;
+}
+
+/**
+ * Pull %%…%% editing notes that sit *inside* the materials text out of the
+ * prose, returning the cleaned text and the notes (in document order). Two
+ * kinds:
+ * - **Inline** (mid-paragraph, next to the text it concerns): replaced in the
+ *   text by a positional marker "[§N]" carried on the note, so the model can
+ *   apply it at that exact spot.
+ * - **Trailing** (the last %%…%% with only whitespace after it): removed and
+ *   treated as whole-passage (no marker).
+ *
+ * Notes that occupy a whole line are NOT handled here — those are paragraph
+ * boundaries (see isAnnotationLine) and are read as below-paragraph guidelines
+ * by gatherEditContext. Only %%…%% embedded in prose on a line with other text
+ * are extracted here.
+ */
+export function extractInlineGuidelines(text: string): {
+	text: string;
+	notes: EditNote[];
+} {
+	const re = /%%([\s\S]*?)%%/g;
+	const matches: Array<{ start: number; end: number; content: string }> = [];
+	let m: RegExpExecArray | null;
+	while ((m = re.exec(text)) !== null) {
+		matches.push({
+			start: m.index,
+			end: m.index + m[0].length,
+			content: (m[1] ?? "").trim(),
+		});
+	}
+	if (matches.length === 0) {
+		return { text, notes: [] };
+	}
+
+	let cleaned = "";
+	let cursor = 0;
+	let counter = 0;
+	const notes: EditNote[] = [];
+	for (let i = 0; i < matches.length; i++) {
+		const mt = matches[i];
+		if (!mt) continue;
+		const isTrailing = i === matches.length - 1 && text.slice(mt.end).trim() === "";
+		cleaned += text.slice(cursor, mt.start);
+		if (isTrailing) {
+			notes.push({ note: mt.content });
+		} else {
+			counter++;
+			const marker = `[§${counter}]`;
+			cleaned += marker;
+			notes.push({ marker, note: mt.content });
+		}
+		cursor = mt.end;
+	}
+	cleaned += text.slice(cursor);
+	// A removed trailing note leaves trailing whitespace, and replacing a note
+	// can leave a doubled space. Collapse horizontal runs (newlines between
+	// lines of a multi-line paragraph are kept) and trim the ends.
+	cleaned = cleaned
+		.replace(/[ \t]{2,}/g, " ")
+		.replace(/[ \t]+\n/g, "\n")
+		.trim();
+	return { text: cleaned, notes };
+}
+
 /**
  * Check if a line starts a coo note callout: "> [!coo]" (optionally with
  * +/- and a title). Case-insensitive on the callout type.

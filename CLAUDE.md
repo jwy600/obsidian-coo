@@ -36,7 +36,7 @@ The original Coo web app (Next.js + React + Zustand + OpenAI). This plugin ports
 - **Composer modal over the note** — the modal is a command bar (question input + Ask + Rewrite); all AI output writes straight into the note, not into the modal
 - **Collapsed callout notes** — Ask answers stored as `[!coo]` Obsidian callouts below the paragraph (question as title, answer as body; markdown renders when expanded), consumed by Rewrite
 - **Inline Translate** — bracketed translation inserted right after the selection, per word/phrase
-- **Edit revisions** — constructed passages stored as `[!coo-edit]` callouts below the materials (numbered, chained, manually curated); guidelines stashed in `%%…%%` comments on the line beneath
+- **Edit revisions** — constructed/revised passages stored as `[!coo-edit]` callouts below the materials (numbered, chained, manually curated); editing notes stashed as `%%…%%` — inline next to the text, trailing at the end, or on the line beneath — with positional inline notes carried as `[§N]` markers
 - **Per-note chain storage** — the chain head (`response_id`) stored in a plugin-side JSON file keyed by note path
 
 ## Tech stack
@@ -70,9 +70,9 @@ src/
   ai-client.ts       # Responses API: chatCompletion (text+responseId), registerNote, parseResponse, CooApiError
   chain.ts           # Per-note chaining: askChained (Ask + Edit), reRegisterNote, chain-head storage in chain-data.json
   translate.ts       # Standalone Translate action (inline bracketed insertion)
-  edit.ts            # Standalone Edit action (constructs a passage from materials + %%…%% guidelines → [!coo-edit] revision)
+  edit.ts            # Standalone Edit action (carries out editing intent on materials + %%…%% notes → [!coo-edit] revision)
   composer-modal.ts  # Discuss modal: Ask (selection-aware/drill-down, chained, auto-closes) + Rewrite
-  editor-ops.ts      # Paragraph/callout detection + CRUD, drill-down targeting, Edit guidelines/numbering, translate insertion, selection highlight, math-delimiter normalization
+  editor-ops.ts      # Paragraph/callout detection + CRUD, drill-down targeting, Edit guidelines/inline-note extraction/numbering, translate insertion, selection highlight, math-delimiter normalization
 ```
 
 Output: `main.js` + `manifest.json` + `styles.css` at repo root (loaded by Obsidian).
@@ -88,9 +88,9 @@ Output: `main.js` + `manifest.json` + `styles.css` at repo root (loaded by Obsid
 | `src/prompts.ts` | Ported `BLOCK_ACTION_PROMPT` (`<scope>`/`<transformations>`/`<ask>`), `BLOCK_ACTION_TRANSLATE_PROMPT`, `REWRITE_PROMPT`, `REGISTER_DOC_PROMPT`, plus the Obsidian-native `EDIT_PROMPT`. `replaceLanguageTag()` / `replaceTranslationLanguageTag()`. Input builders `buildAskInput()`, `buildRewriteInput()`, `buildTranslateInput()`, `buildEditInput()` |
 | `src/chain.ts` | Per-note chaining: `askChained()` (registers on first Ask/Edit, chains, retries on expired id; optional `reasoningEffort`/`webSearchEnabled` overrides — Edit pins both off), `reRegisterNote()`, `getChainHead`/`setChainHead`/`clearChain`/`renameChainEntry` (persisted in `chain-data.json`) |
 | `src/translate.ts` | `performTranslate()` — captures selection, calls Translate, inserts `(translation)` after the selection |
-| `src/edit.ts` | `performEdit()` — selection-or-cursor materials + `%%…%%` guidelines below → constructs a passage, appends a numbered `[!coo-edit]` revision callout (chains) |
+| `src/edit.ts` | `performEdit()` — selection-or-cursor materials + `%%…%%` notes (inline/trailing/below) → constructs or lightly revises, appends a numbered `[!coo-edit]` revision callout (chains) |
 | `src/composer-modal.ts` | Discuss modal: passage preview + question input + Ask + Rewrite. Ask writes `[!coo]` callouts to the note (chained, closes after each Ask); drill-down mode targets a selection inside an answer callout; Rewrite folds callouts into the paragraph (one-shot) |
-| `src/editor-ops.ts` | `findParagraphBounds()`, `findSelectionSpan()`, `resolveEditBounds()`, `getParagraphText()`, `extractMarkdownPrefix()`, callout CRUD + drill-down (`findCalloutBlocks`, `findCalloutContaining`, `getCalloutQaPairs`, `getCalloutBody`, `appendCallout`, `appendCalloutAfter` (with `CalloutType` for `[!coo]`/`[!coo-edit]`), `replaceParagraphAndRemoveCallouts`), Edit helpers (`gatherEditContext`, `getSurroundingParagraphs`, `nextRevisionNumber`), `normalizeMathDelimiters()`, `insertTranslationAfter()`, `highlightSelection()` |
+| `src/editor-ops.ts` | `findParagraphBounds()`, `findSelectionSpan()`, `resolveEditBounds()`, `getParagraphText()`, `extractMarkdownPrefix()`, callout CRUD + drill-down (`findCalloutBlocks`, `findCalloutContaining`, `getCalloutQaPairs`, `getCalloutBody`, `appendCallout`, `appendCalloutAfter` (with `CalloutType` for `[!coo]`/`[!coo-edit]`), `replaceParagraphAndRemoveCallouts`), Edit helpers (`extractInlineGuidelines`, `gatherEditContext`, `getSurroundingParagraphs`, `nextRevisionNumber`), `normalizeMathDelimiters()`, `insertTranslationAfter()`, `highlightSelection()` |
 | `manifest.json` | Plugin metadata (`coo`) |
 | `styles.css` | Composer modal, Ask/Rewrite buttons, passage preview, `[!coo]` / `[!coo-edit]` callout accents |
 
@@ -109,11 +109,13 @@ Select text in a paragraph → command palette or right-click → composer modal
 Select a word or phrase → command palette or right-click → the translation is inserted inline, bracketed `( )`, immediately after the selection. The original text is preserved. One editor op (Ctrl+Z reverts). Does not chain.
 
 ### Edit
-Place the cursor in the **materials** — the rough fragments of a thought you can't yet articulate — and run `coo:Edit` (command palette or right-click; no modal). To construct from a multi-paragraph block (a whole list, several paragraphs), **select** it instead. Any **guidelines** go in a `%%…%%` comment on the line directly below the materials. Edit **constructs** a coherent passage (faithful to the thought — it connects and elaborates but never invents substance, and preserves every point rather than summarizing it away; matches the surrounding note's voice; fully expressed, no padding) and appends it as a collapsed `[!coo-edit]` **revision** callout beneath the input.
+Place the cursor in the **materials** — rough fragments of a thought, or finished prose you want revised — and run `coo:Edit` (command palette or right-click; no modal). To work on a multi-paragraph block (a whole list, several paragraphs), **select** it instead. Drop editing **notes** as `%%…%%` wherever you like: inline next to the text they concern (a `[§N]` marker records the spot), trailing at the end of the paragraph (whole-passage), or on the line directly below (whole-passage) — all count. Edit **carries out the intent** adaptively: it **constructs** when the materials are rough fragments (connect, elaborate, fully express the thought) and **revises lightly** when they're already coherent prose (touch only what the notes point at, keep the rest verbatim). It is grounded in the full note — already in the model's context via the per-note registration — and faithful: never invents substance, preserves every point rather than summarizing it away, and calibrates any claim that is wrong, exaggerated, or understated toward the truth; matches the surrounding note's voice. The result appends as a collapsed `[!coo-edit]` **revision** callout beneath the input. When a material claim is corrected, dropped, or doubted, the revision ends with a short **Checks** section flagging it; a clean passage (no Checks) is the default.
 
 - The materials and guidelines are **never overwritten** — the revision lands in a callout, so you curate by hand (lift what you want, delete the callout). There is no "apply" action.
 - Revisions are **numbered** globally per note (`#1`, `#2`, …, never reused) and **chain** (sharing the note's Ask conversation root), so later guidelines can reference a prior revision by number (e.g. `%%refine revision #2 to be shorter%%`).
-- The immediate **before/after paragraphs** are sent as `<context>` (`getSurroundingParagraphs`) **only on the first edit of a paragraph** (`hasRevisions` from `gatherEditContext`); later revisions inherit them via the chain. The model constructs only from the materials, never the context.
+- The immediate **before/after paragraphs** are sent as `<context>` (`getSurroundingParagraphs`) **only on the first edit of a paragraph** (`hasRevisions` from `gatherEditContext`); later revisions inherit them via the chain. They cover *local* flow. The model works only from the materials, never the context.
+- The **full note** is also in the model's context — registered as the per-note chain root on the first Ask/Edit — so the prompt grounds each construction in the whole document: matching its terminology/framing/stance, staying consistent with claims the note already makes, and fact-checking the materials' claims against it. That snapshot can drift if the note is heavily edited; Re-register note refreshes it.
+- **Editing notes** (`%%…%%`) work in three places, all of which count: **inline** next to the text they concern (`extractInlineGuidelines` leaves a `[§N]` marker at the spot so the model applies the note there), **trailing** at the end of the paragraph (whole-passage), or on the **line below** (whole-passage, read by `gatherEditContext`). Inline → positional; the other two → whole-passage. Every `%%…%%` and `[§N]` marker is stripped from the output.
 - A cursor or selection on a `%%…%%` line (or a blank/heading/callout line) yields no materials — `resolveEditBounds` returns null — so you can't "edit a guideline" by mistake.
 - Edit pins reasoning and web search off (construction needs neither). One editor op (Ctrl+Z reverts).
 
@@ -158,7 +160,7 @@ Some paragraph text that the user discussed with AI.
 
 ### Edit revisions (`[!coo-edit]`)
 
-Each Edit construction is stored as a collapsed `[!coo-edit]` callout beneath the materials (+ guidelines), distinct from `[!coo]` Ask notes:
+Each Edit result (a construction from fragments, or a light revision of prose) is stored as a collapsed `[!coo-edit]` callout beneath the materials (+ notes), distinct from `[!coo]` Ask notes:
 
 ```markdown
 fragments of a thought the user couldn't yet articulate
@@ -170,11 +172,12 @@ fragments of a thought the user couldn't yet articulate
 ```
 
 - `appendCalloutAfter(..., "coo-edit")` writes a revision callout — the `calloutType` param selects `[!coo]` vs `[!coo-edit]`.
+- When the model corrects, drops, or doubts a material claim, the revision body ends with a short **Checks** section (a `**Checks**` label, then one bullet per affected claim); a clean passage with no Checks note is the default. The passage itself stays liftable — the Checks section is the alert, trimmed away during curation.
 - `gatherEditContext()` reads the `%%…%%` guidelines directly below the materials, finds where the new revision should insert (after the guidelines, then after any existing `[!coo-edit]` revisions so they stack in order), and reports whether revisions already exist (`hasRevisions`).
 - `nextRevisionNumber()` returns one higher than the highest `#N` among existing `[!coo-edit]` titles — global per note, never reused.
 - `getSurroundingParagraphs()` returns the prose paragraphs immediately before/after the materials (skipping `%%…%%` guidelines and `[!coo-edit]` revisions), sent as `<context>` on the paragraph's first edit so the model matches local flow and voice.
 - `[!coo-edit]` is invisible to Rewrite and drill-down: `isCalloutStart` matches only the literal `[!coo]`, so a revision callout is never read as a Q&A note or treated as a drillable answer.
-- `%%…%%` doubles as Edit's guidelines vehicle — a line whose trimmed content is wrapped in `%%…%%` (`isAnnotationLine`), still a paragraph boundary, now also read by Edit.
+- `%%…%%` doubles as Edit's editing-notes vehicle — **inline** within a paragraph (`extractInlineGuidelines` pulls them out as positional `[§N]`-tagged guidelines, or whole-passage if trailing) or as a **whole-line** comment (`isAnnotationLine`, a paragraph boundary, read below the paragraph by `gatherEditContext`). All forms are stripped from the output.
 - Styled via `.callout[data-callout="coo-edit"]` in `styles.css` (teal accent, distinct from the purple `[!coo]`).
 
 ## Settings
@@ -204,7 +207,7 @@ Prompts are ported from coo-app-next and stored language-neutral as inline strin
 - `buildAskInput(passage, selection, question)` → `Answer this question about the passage.` preamble + `Question:` first, then `<passage>`, then the highlighted selection (matches coo-app-next's ordering; the highlight is appended after the passage). The passage is a paragraph normally, or an answer body when drilling down.
 - `buildRewriteInput(passage, notes)` → `<passage>` + `<notes>` as Q&A pairs (`Q: …` / `A: …`), so the model knows what each answer addresses.
 - `buildTranslateInput(passage)` → `<passage>` (the selected text).
-- `buildEditInput(materials, guidelines, revisionNumber, context?)` → `<materials>` + optional `<guidelines>` + optional `<context>` (the before/after paragraphs) + `This is revision #N` (the number labels the chained turn so later guidelines can reference it).
+- `buildEditInput(materials, notes, revisionNumber, context?)` → `<materials>` (with `[§N]` markers at inline notes) + optional `<guidelines>` (inline notes tagged `[§N]`, whole-passage notes plain) + optional `<context>` (the before/after paragraphs) + `This is revision #N` (the number labels the chained turn so later notes can reference it).
 
 ## API client details
 

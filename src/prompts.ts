@@ -1,6 +1,6 @@
 import type { ResponseLanguage, TranslateLanguage } from "./types";
 import { LANGUAGE_MAP } from "./types";
-import type { CalloutQaPair } from "./editor-ops";
+import type { CalloutQaPair, EditNote } from "./editor-ops";
 
 /**
  * System prompt for the Ask action (ported from coo-app-next's block-action
@@ -67,32 +67,40 @@ const REWRITE_PROMPT = `You revise a passage of Markdown using a question-and-an
 </rules>`;
 
 /**
- * Edit prompt. Constructs a coherent passage from the author's materials (rough
- * fragments of a thought), following any guidelines. Faithful construction:
- * connect, structure, and elaborate to complete the idea — but never invent
- * substance the fragments don't support. No <language> tag: Edit constructs in
+ * Edit prompt. Carries out the author's editing intent on a passage — which may
+ * be rough fragments to construct from, or already-finished prose to revise
+ * lightly (the model matches its effort to the state of the text). Grounded in
+ * the full document (already in context, registered at the note's chain root)
+ * and faithful: never invent substance, and calibrate any claim that is wrong,
+ * exaggerated, or understated, flagging material changes in an optional trailing
+ * Checks section. Inline %%…%% notes arrive as [§N]-tagged positional guidelines;
+ * the model strips every marker from its output. No <language> tag: Edit works in
  * the materials' own language (this is not translation). See CONTEXT.md (Edit,
- * Materials, Guidelines) and docs/adr/0001-edit-constructs-from-fragments.md.
+ * Materials, Guidelines) and docs/adr/0001-edit-constructs-from-fragments.md,
+ * docs/adr/0002-edit-grounds-and-fact-checks.md,
+ * docs/adr/0003-edit-adaptive-and-inline-notes.md.
  */
-const EDIT_PROMPT = `You construct a coherent passage of Markdown from the author's materials, faithfully expressing the thought they couldn't yet articulate, following any guidelines they give.
+const EDIT_PROMPT = `You carry out the author's editing intent on a passage of Markdown, following any guidelines they give. The text may be rough fragments of a thought or already-finished prose — construct when it is fragments, revise lightly when it is prose. You ground the work in the full document and keep the materials' claims accurate, calibrating anything that is wrong, exaggerated, or understated rather than propagating it.
 
 <scope>
-- The text inside <materials>...</materials> is the author's fragments — rough pieces of a single thought, not finished prose
-- The materials are always the author's original fragments — construct from those, not from a prior revision, unless the guidelines explicitly build on a numbered revision
-- Prior conversation turns (via response chaining) hold the passages you constructed earlier, each labeled with its number (e.g. "revision #2"). If the guidelines refer to one by number (e.g. "reuse the opening from revision #2"), resolve it from those turns — do not re-derive it from the fragments
-- The <guidelines>...</guidelines> block, when present, holds the author's editing direction (tone, length, focus, or references to prior revisions). Follow it
-- The <context> block, when present, holds the prose paragraphs immediately before and after the materials. Use them to match flow, register, and voice so the passage continues from the preceding paragraph and leads into the following one — but construct only from the <materials>; never repeat or incorporate the surrounding paragraphs' substance
+- The text inside <materials>...</materials> is the author's text — either rough fragments of a single thought, or already-coherent prose. It is always the author's original text: work from it, not from a prior revision, unless the guidelines explicitly build on a numbered revision
+- A [§N] marker inside <materials> marks the spot where an inline guideline applies — an instruction the author dropped right next to the text it concerns. Each marker is listed in <guidelines> with the same [§N] label; carry out that instruction at that spot. Guidelines with no marker apply to the whole passage
+- Prior conversation turns (via response chaining) hold the passages you constructed earlier, each labeled with its number (e.g. "revision #2"). If the guidelines refer to one by number (e.g. "reuse the opening from revision #2"), resolve it from those turns — do not re-derive it from the materials
+- The <guidelines>...</guidelines> block, when present, holds the author's editing direction: inline notes (each tagged with its [§N] marker), whole-passage notes (no marker), or references to prior revisions. Follow them
+- The <context> block, when present, holds the prose paragraphs immediately before and after the materials. Use them to match local flow, register, and voice so the passage continues from the preceding paragraph and leads into the following one — but work only from the <materials>; never repeat or incorporate the surrounding paragraphs' substance
+- The full document is also in your context: it was registered at the start of this conversation and is the authority on what the note already says. Use it to match the document's established terminology, framing, and stance, and to keep the passage consistent with claims the note already makes. The <context> neighbors cover local flow; the full document covers consistency and fact-checking across the whole note
 </scope>
 
 <rules>
-- Turn the materials into a coherent passage that fully expresses the thought: connect the pieces, structure them, and elaborate as much as is needed to complete the idea — but no more. Do not pad, repeat, or elaborate for its own sake
+- Match your effort to the state of the text. If the materials are rough fragments, construct a coherent passage that fully expresses the thought: connect the pieces, structure them, and elaborate as much as is needed to complete the idea — but no more, and never pad or elaborate for its own sake. If they are already coherent prose, revise lightly: change only what the guidelines point at and keep the rest of the wording intact. Do not rebuild finished prose when a small fix is asked for
 - Stay faithful to the thought. You may add connective tissue and structure; never invent claims, examples, facts, or emphasis the materials do not support
-- Preserve all of the materials' substance: reorganize and connect the points as flowing prose, but do not summarize away, omit, or merge any distinct detail — every claim, step, and fact should survive into the passage. (If the guidelines explicitly ask to summarize or shorten, follow them instead.)
+- Fact-check as you work. Judge each material claim against the full document and your own knowledge: if a claim is wrong, exaggerated, or understated, calibrate the passage toward the truth — correct it in place, or drop it if it cannot be salvaged. Expressing the author's thought accurately is the goal; faithfully reproducing an inaccuracy is not
+- Preserve all of the materials' substance: reorganize and connect the points as flowing prose, but do not summarize away, omit, or merge any distinct detail — every claim, step, and fact should survive into the passage. The one exception is a claim that is wrong or miscalibrated: that is corrected (see above), not laundered through. (If the guidelines explicitly ask to summarize or shorten, follow them instead.)
 - Match the voice and register of the surrounding note, so the passage reads like the author wrote it — unless the guidelines ask for a different tone
-- With no guidelines, construct the thought fully and naturally. With guidelines, follow them
-- Construct in the language the materials are written in (this is not translation)
+- Work in the language the materials are written in (this is not translation)
 - Preserve any Markdown formatting the materials imply (lists, code, math) where it still fits; keep math in $…$ / $$…$$ — never \\(...\\) or \\[...\\]
-- Output the constructed passage only — no preamble, no explanation, no surrounding code fences
+- Strip every [§N] marker and any %%…%% from your output — they are scaffolding, not prose. When you carry out an inline note at [§N], the marker simply disappears and the result lives in the prose
+- Output the passage only — no preamble, no explanation, no surrounding code fences. The single allowed addition: if you corrected, dropped, or doubted a material claim, append a Checks section at the very end — a blank line, then **Checks** on its own line, then one tight bullet per affected claim (the original wording in italics, then what you changed or what still looks off). Omit the section entirely when every claim holds up; a clean passage with no Checks note is the common case and the default
 </rules>`;
 
 /**
@@ -237,28 +245,33 @@ export function buildRewriteInput(
 }
 
 /**
- * Build the Edit input: the materials (fragments) as <materials>, the guidelines
- * (when present) as <guidelines>, and the revision number so the chained turn is
- * labeled — later guidelines can reference "revision #N". The materials are
- * always the author's original fragments; prior revisions arrive via chaining.
+ * Build the Edit input: the materials as <materials> (with [§N] markers left at
+ * any inline notes), the notes as <guidelines> bullets (each inline note tagged
+ * with its [§N] marker; whole-passage notes carry none), optional <context>, and
+ * the revision number so the chained turn is labeled — later guidelines can
+ * reference "revision #N". The materials are always the author's original text;
+ * prior revisions arrive via chaining.
  */
 export function buildEditInput(
 	materials: string,
-	guidelines: string,
+	notes: EditNote[],
 	revisionNumber: number,
 	context?: { before?: string; after?: string },
 ): string {
 	const materialsBlock = `<materials>\n${materials.trim()}\n</materials>`;
-	const guidelinesBlock = guidelines.trim()
-		? `\n\n<guidelines>\n${guidelines.trim()}\n</guidelines>`
-		: "";
+	const guidelinesBlock =
+		notes.length > 0
+			? `\n\n<guidelines>\n${notes
+					.map((n) => (n.marker ? `- ${n.marker} ${n.note}` : `- ${n.note}`))
+					.join("\n")}\n</guidelines>`
+			: "";
 	const before = context?.before?.trim() ?? "";
 	const after = context?.after?.trim() ?? "";
 	const contextBlock =
 		before || after
 			? `\n\n<context>\nPreceding paragraph:\n${before || "(none)"}\n\nFollowing paragraph:\n${after || "(none)"}\n</context>`
 			: "";
-	return `Construct a passage from the materials below, following any guidelines. This is revision #${revisionNumber}.\n\n${materialsBlock}${guidelinesBlock}${contextBlock}`;
+	return `Work on the materials below, following any guidelines. This is revision #${revisionNumber}.\n\n${materialsBlock}${guidelinesBlock}${contextBlock}`;
 }
 
 /** Build the Translate input: the selected text as <passage>. */
