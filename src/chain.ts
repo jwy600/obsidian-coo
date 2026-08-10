@@ -89,6 +89,25 @@ export async function clearChain(
 	await writeMap(app, pluginDir, map);
 }
 
+/**
+ * Move a note's chain entry from its old path to its new path (after a rename).
+ * No-ops when the old path has no entry, so renaming an unrelated file is cheap
+ * and safe. Used by the vault rename handler in main.ts.
+ */
+export async function renameChainEntry(
+	app: App,
+	pluginDir: string,
+	oldPath: string,
+	newPath: string,
+): Promise<void> {
+	const map = await readMap(app, pluginDir);
+	const head = map[oldPath];
+	if (head === undefined) return;
+	map[newPath] = head;
+	delete map[oldPath];
+	await writeMap(app, pluginDir, map);
+}
+
 export interface AskChainedParams {
 	app: App;
 	pluginDir: string;

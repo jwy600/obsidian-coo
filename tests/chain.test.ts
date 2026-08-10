@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import type { App } from "obsidian";
-import { getChainHead, setChainHead, clearChain } from "../src/chain";
+import { getChainHead, setChainHead, clearChain, renameChainEntry } from "../src/chain";
 
 const CHAIN_PATH = "/plugin/chain-data.json";
 
@@ -60,6 +60,24 @@ describe("chain storage", () => {
 		await clearChain(app, dir, "a.md");
 		expect(await getChainHead(app, dir, "a.md")).toBeUndefined();
 		expect(await getChainHead(app, dir, "b.md")).toBe("resp_b");
+	});
+
+	it("renames a chain entry to a new path", async () => {
+		const { app } = makeApp({});
+		await setChainHead(app, dir, "old.md", "resp_1");
+		await renameChainEntry(app, dir, "old.md", "new.md");
+		expect(await getChainHead(app, dir, "old.md")).toBeUndefined();
+		expect(await getChainHead(app, dir, "new.md")).toBe("resp_1");
+	});
+
+	it("no-ops (and writes nothing) when renaming a path with no entry", async () => {
+		const { app, adapter } = makeApp({});
+		await setChainHead(app, dir, "other.md", "resp_x");
+		adapter.write.mockClear(); // ignore the write performed by setChainHead
+		await renameChainEntry(app, dir, "old.md", "new.md");
+		expect(await getChainHead(app, dir, "new.md")).toBeUndefined();
+		// A miss must not trigger a write.
+		expect(adapter.write).not.toHaveBeenCalled();
 	});
 
 	it("writes a valid JSON map keyed by note path", async () => {

@@ -78,7 +78,7 @@
 	white-space: pre-wrap;
 }
 
-.coo-whole-doc-hint {
+.coo-scope-hint {
 	margin-bottom: 6px;
 	font-size: var(--font-ui-smaller);
 	color: var(--text-muted);

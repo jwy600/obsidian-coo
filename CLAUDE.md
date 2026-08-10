@@ -62,7 +62,7 @@ npm test             # vitest
 
 ```
 src/
-  main.ts            # Plugin lifecycle + 4 commands + context menu + legacy cleanup
+  main.ts            # Plugin lifecycle + 4 commands + context menu + chain-state pruning on delete/rename + legacy cleanup
   settings.ts        # CooSettingTab (6 settings), DEFAULT_SETTINGS, re-exports utils
   settings-utils.ts  # Pure functions: locale detection, language conflict checks
   types.ts           # Shared types + LANGUAGE_MAP, *_MAP
@@ -81,12 +81,12 @@ Output: `main.js` + `manifest.json` + `styles.css` at repo root (loaded by Obsid
 
 | File | Purpose |
 |------|---------|
-| `src/main.ts` | `CooPlugin`: `onload` registers 4 commands (`discuss`, `translate`, `edit`, `re-register`) + editor context menu + legacy prompt cleanup. Helpers `openDiscuss()`, `runEdit()`, `reRegister()` |
+| `src/main.ts` | `CooPlugin`: `onload` registers 4 commands (`discuss`, `translate`, `edit`, `re-register`) + editor context menu + prunes/remaps chain state on note delete/rename + legacy prompt cleanup. Helpers `openDiscuss()`, `runEdit()`, `reRegister()` |
 | `src/settings.ts` | `DEFAULT_SETTINGS`, `CooSettingTab` with 6 settings, re-exports from `settings-utils` |
 | `src/settings-utils.ts` | `mapLocaleToResponseLanguage()`, `detectObsidianLocale()`, `isLanguageConflict()`, `getDefaultTranslateLanguage()` |
 | `src/ai-client.ts` | `chatCompletion()` (returns `{ text, responseId }`), `registerNote()` (priming call → root id), `parseResponse()`, `CooApiError`. Supports `previousResponseId`, `store`, per-call `reasoningEffort`/`webSearchEnabled` overrides |
 | `src/prompts.ts` | Ported `BLOCK_ACTION_PROMPT` (`<scope>`/`<transformations>`/`<ask>`), `BLOCK_ACTION_TRANSLATE_PROMPT`, `REWRITE_PROMPT`, `REGISTER_DOC_PROMPT`, plus the Obsidian-native `EDIT_PROMPT`. `replaceLanguageTag()` / `replaceTranslationLanguageTag()`. Input builders `buildAskInput()`, `buildRewriteInput()`, `buildTranslateInput()`, `buildEditInput()` |
-| `src/chain.ts` | Per-note chaining: `askChained()` (registers on first Ask/Edit, chains, retries on expired id; optional `reasoningEffort`/`webSearchEnabled` overrides — Edit pins both off), `reRegisterNote()`, `getChainHead`/`setChainHead`/`clearChain` (persisted in `chain-data.json`) |
+| `src/chain.ts` | Per-note chaining: `askChained()` (registers on first Ask/Edit, chains, retries on expired id; optional `reasoningEffort`/`webSearchEnabled` overrides — Edit pins both off), `reRegisterNote()`, `getChainHead`/`setChainHead`/`clearChain`/`renameChainEntry` (persisted in `chain-data.json`) |
 | `src/translate.ts` | `performTranslate()` — captures selection, calls Translate, inserts `(translation)` after the selection |
 | `src/edit.ts` | `performEdit()` — selection-or-cursor materials + `%%…%%` guidelines below → constructs a passage, appends a numbered `[!coo-edit]` revision callout (chains) |
 | `src/composer-modal.ts` | Discuss modal: passage preview + question input + Ask + Rewrite. Ask writes `[!coo]` callouts to the note (chained, closes after each Ask); drill-down mode targets a selection inside an answer callout; Rewrite folds callouts into the paragraph (one-shot) |
@@ -127,6 +127,7 @@ Each note has a conversation root. On the first Ask or Edit, the whole note is s
 - **Ask** and **Edit** chain. Rewrite and Translate are one-shot.
 - If a chained call is rejected (HTTP 400 — typically an expired `response_id` after OpenAI evicts the stored response), the chain resets and the call retries once from a fresh registration.
 - **Re-register note** captures a fresh snapshot and resets the chain (prior Q&A context drops).
+- **Delete/rename** prunes a deleted note's chain entry and remaps a renamed one, so `chain-data.json` doesn't accumulate stale `response_id`s.
 - The registered snapshot is a point-in-time copy of the note. The passage you Ask about is always sent fresh; the broad note context can drift if you edit heavily (that's what re-register is for).
 
 ## Note format

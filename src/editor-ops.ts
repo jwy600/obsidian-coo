@@ -368,13 +368,6 @@ export function getCalloutQaPairs(
 }
 
 /**
- * Append a note as a new collapsed coo callout below the paragraph, after any
- * existing note callouts. The question becomes the callout title; the answer
- * (with its markdown intact) becomes the body. A blank line separates the
- * callout block from the paragraph / previous callout so it renders as its own
- * block.
- */
-/**
  * Normalize the math delimiters an LLM tends to emit into the ones Obsidian
  * actually renders. Obsidian's MathJax only honors `$…$` (inline) and `$$…$$`
  * (display); models often return TeX's `\(...\)` and `\[...\]` instead, which
@@ -645,11 +638,15 @@ export function insertTranslationAfter(
 }
 
 /**
- * Wrap an editor range with Obsidian ==highlight== markers, so the selected word
- * stays visually highlighted in the note while the discuss modal is open. The
- * range must be within a single line (a word or short phrase) — ==...== is an
- * inline highlight that doesn't render across line breaks. One editor op.
- * Paired with clearSelectionHighlight, which removes the markers on modal close.
+ * Wrap an editor range with Obsidian ==highlight== markers, applied when the
+ * discuss modal opens so the selected word stays visually marked in the note.
+ * The range must be within a single line (a word or short phrase) — ==...== is
+ * an inline highlight that doesn't render across line breaks. One editor op.
+ *
+ * The highlight is intentionally persistent: it stays in the note after the
+ * modal closes to record which phrase the question was about (the callout title
+ * is the question, not the word). There is no auto-cleanup — revert it with
+ * Ctrl+Z like any other editor op.
  */
 export function highlightSelection(
 	editor: Editor,

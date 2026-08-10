@@ -39,7 +39,7 @@ interface SelectionRange {
  *
  * The modal is the command bar; the note is the canvas. Ask answers and
  * rewrites write straight into the note (not into this modal):
- *   - Ask   → answer appended as a %%...%% note under the paragraph (chains)
+ *   - Ask   → answer appended as a collapsed [!coo] callout under the paragraph (chains)
  *   - Rewrite → paragraph rewritten in place, notes removed (one-shot)
  * Undo everywhere is native Ctrl+Z.
  */
@@ -97,7 +97,7 @@ export class CooComposer extends Modal {
 		// isn't mistaken for a single paragraph.
 		if (this.wholeDoc) {
 			contentEl.createDiv({
-				cls: "coo-whole-doc-hint",
+				cls: "coo-scope-hint",
 				text: "Asking about the whole document",
 			});
 		}
@@ -106,7 +106,7 @@ export class CooComposer extends Modal {
 		// so the preview below is that answer, not a paragraph.
 		if (this.drillTarget) {
 			contentEl.createDiv({
-				cls: "coo-whole-doc-hint",
+				cls: "coo-scope-hint",
 				text: "Asking about this answer",
 			});
 		}

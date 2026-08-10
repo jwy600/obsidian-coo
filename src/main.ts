@@ -5,7 +5,7 @@ import { detectObsidianLocale } from "./settings-utils";
 import { CooComposer } from "./composer-modal";
 import { performTranslate } from "./translate";
 import { performEdit } from "./edit";
-import { reRegisterNote } from "./chain";
+import { reRegisterNote, clearChain, renameChainEntry } from "./chain";
 import {
 	getSelectedTextWithContext,
 	findSelectionSpan,
@@ -81,6 +81,31 @@ export default class CooPlugin extends Plugin {
 						.onClick(() => {
 							void performTranslate(editor, this.settings);
 						});
+				});
+			}),
+		);
+
+		// --- Keep chain state tidy: prune a note's entry when it's deleted, and
+		// remap it across a rename. Otherwise a deleted/renamed note leaves a
+		// stale response_id in chain-data.json. Best-effort and silent on failure.
+		this.registerEvent(
+			this.app.vault.on("delete", (file) => {
+				void clearChain(this.app, this.manifest.dir ?? "", file.path).catch(
+					() => {
+						/* best-effort chain cleanup */
+					},
+				);
+			}),
+		);
+		this.registerEvent(
+			this.app.vault.on("rename", (file, oldPath) => {
+				void renameChainEntry(
+					this.app,
+					this.manifest.dir ?? "",
+					oldPath,
+					file.path,
+				).catch(() => {
+					/* best-effort chain cleanup */
 				});
 			}),
 		);
