@@ -278,6 +278,12 @@ describe("getEditSystemPrompt", () => {
 		expect(result).toContain("clean passage");
 	});
 
+	it("describes the optional leading Guidelines section for flagged guidelines", () => {
+		const result = getEditSystemPrompt();
+		expect(result).toContain("Guidelines section");
+		expect(result).toContain("mistaken, contradicts");
+	});
+
 	it("adapts effort to fragments vs finished prose", () => {
 		const result = getEditSystemPrompt();
 		expect(result).toContain("Match your effort");

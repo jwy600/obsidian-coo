@@ -73,7 +73,8 @@ const REWRITE_PROMPT = `You revise a passage of Markdown using a question-and-an
  * the full document (already in context, registered at the note's chain root)
  * and faithful: never invent substance, and calibrate any claim that is wrong,
  * exaggerated, or understated, flagging material changes in an optional trailing
- * Checks section. Inline %%…%% notes arrive as [§N]-tagged positional guidelines;
+ * Checks section and mistaken guidelines in an optional leading Guidelines
+ * section. Inline %%…%% notes arrive as [§N]-tagged positional guidelines;
  * the model strips every marker from its output. No <language> tag: Edit works in
  * the materials' own language (this is not translation). See CONTEXT.md (Edit,
  * Materials, Guidelines) and docs/adr/0001-edit-constructs-from-fragments.md,
@@ -100,7 +101,7 @@ const EDIT_PROMPT = `You carry out the author's editing intent on a passage of M
 - Work in the language the materials are written in (this is not translation)
 - Preserve any Markdown formatting the materials imply (lists, code, math) where it still fits; keep math in $…$ / $$…$$ — never \\(...\\) or \\[...\\]
 - Strip every [§N] marker and any %%…%% from your output — they are scaffolding, not prose. When you carry out an inline note at [§N], the marker simply disappears and the result lives in the prose
-- Output the passage only — no preamble, no explanation, no surrounding code fences. The single allowed addition: if you corrected, dropped, or doubted a material claim, append a Checks section at the very end — a blank line, then **Checks** on its own line, then one tight bullet per affected claim (the original wording in italics, then what you changed or what still looks off). Omit the section entirely when every claim holds up; a clean passage with no Checks note is the common case and the default
+- Output the passage only — no preamble, no explanation, no surrounding code fences. Two allowed additions, each shown only when it has something to say. Leading: if a guideline is mistaken, contradicts the document or the materials, or cannot be followed as written, begin the output with a Guidelines section — **Guidelines** on its own line, then one tight bullet per flagged guideline (the guideline in italics, then what is wrong with it and what you did instead). Trailing: if you corrected, dropped, or doubted a material claim, append a Checks section at the very end — a blank line, then **Checks** on its own line, then one tight bullet per affected claim (the original wording in italics, then what you changed or what still looks off). Omit each section when there is nothing to flag; a clean passage with neither is the common case and the default
 </rules>`;
 
 /**
