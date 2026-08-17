@@ -5,6 +5,7 @@ import {
 	findSelectionSpan,
 	resolveEditBounds,
 	extractMarkdownPrefix,
+	extractInlineGuidelines,
 	getParagraphText,
 	findCalloutBlocks,
 	findCalloutContaining,
@@ -920,5 +921,56 @@ describe("resolveEditBounds", () => {
 			startLine: 0,
 			endLine: 1,
 		});
+	});
+});
+
+describe("extractInlineGuidelines", () => {
+	it("returns the text unchanged with no notes when there are no %%…%%", () => {
+		const { text, notes } = extractInlineGuidelines("Just a plain sentence. Another one.");
+		expect(text).toBe("Just a plain sentence. Another one.");
+		expect(notes).toEqual([]);
+	});
+
+	it("extracts an inline note and leaves a [§N] marker at its spot", () => {
+		const { text, notes } = extractInlineGuidelines(
+			"First sentence. %%tighten this%% Second sentence.",
+		);
+		expect(text).toBe("First sentence. [§1] Second sentence.");
+		expect(notes).toEqual([{ marker: "[§1]", note: "tighten this" }]);
+	});
+
+	it("treats a trailing note as whole-passage (no marker, removed)", () => {
+		const { text, notes } = extractInlineGuidelines("A whole paragraph of prose. %%expand it%%");
+		expect(text).toBe("A whole paragraph of prose.");
+		expect(notes).toEqual([{ note: "expand it" }]);
+	});
+
+	it("handles inline + trailing together", () => {
+		const { text, notes } = extractInlineGuidelines(
+			"Its weakest link stopped being weak. %%add an example%% Having a model draft a proof was out of reach. %%expand the whole thing%%",
+		);
+		expect(text).toBe(
+			"Its weakest link stopped being weak. [§1] Having a model draft a proof was out of reach.",
+		);
+		expect(notes).toEqual([
+			{ marker: "[§1]", note: "add an example" },
+			{ note: "expand the whole thing" },
+		]);
+	});
+
+	it("numbers multiple inline markers in document order", () => {
+		const { text, notes } = extractInlineGuidelines("a %%one%% b %%two%% c");
+		expect(text).toBe("a [§1] b [§2] c");
+		expect(notes.map((n) => n.marker)).toEqual(["[§1]", "[§2]"]);
+	});
+
+	it("collapses doubled spaces left around a removed note", () => {
+		const { text } = extractInlineGuidelines("word  %%note%%  word");
+		expect(text).toBe("word [§1] word");
+	});
+
+	it("preserves newlines between lines of a multi-line paragraph", () => {
+		const { text } = extractInlineGuidelines("line one %%x%%\nline two");
+		expect(text).toBe("line one [§1]\nline two");
 	});
 });

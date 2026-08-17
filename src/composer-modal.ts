@@ -1,6 +1,6 @@
 import { App, Editor, Modal, Notice, type EditorPosition } from "obsidian";
 import type { CooSettings } from "./types";
-import { DEFAULT_ASK_QUESTION } from "./types";
+import { getDefaultAskQuestion } from "./types";
 import { chatCompletion } from "./ai-client";
 import { askChained } from "./chain";
 import {
@@ -138,8 +138,10 @@ export class CooComposer extends Modal {
 		// the placeholder can just be the question itself.
 		this.inputEl = contentEl.createEl("textarea", {
 			attr: {
-				placeholder:
-					DEFAULT_ASK_QUESTION[this.settings.responseLanguage],
+				placeholder: getDefaultAskQuestion(
+					this.settings.responseLanguage,
+					this.selectedText,
+				),
 				rows: "2",
 			},
 		});
@@ -199,9 +201,14 @@ export class CooComposer extends Modal {
 	private async handleAsk(): Promise<void> {
 		// Empty input falls back to the localized default question — the ask
 		// input is "pre-populated" via its placeholder, and Ask/Enter submits it.
+		// With a selection the default embeds it in quotes, so the callout title
+		// records what was asked about.
 		const question =
 			this.inputEl.value.trim() ||
-			DEFAULT_ASK_QUESTION[this.settings.responseLanguage];
+			getDefaultAskQuestion(
+				this.settings.responseLanguage,
+				this.selectedText,
+			);
 
 		this.setLoading(true, "ask");
 

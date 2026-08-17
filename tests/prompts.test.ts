@@ -258,11 +258,55 @@ describe("getEditSystemPrompt", () => {
 		expect(result).toContain("do not summarize away");
 		expect(result).toContain("survive into the passage");
 	});
+
+	it("grounds the construction in the full document", () => {
+		const result = getEditSystemPrompt();
+		expect(result).toContain("full document");
+		expect(result).toContain("authority");
+	});
+
+	it("instructs the model to fact-check claims (wrong/exaggerated/understated)", () => {
+		const result = getEditSystemPrompt();
+		expect(result).toContain("Fact-check");
+		expect(result).toContain("exaggerated");
+		expect(result).toContain("understated");
+	});
+
+	it("describes the optional trailing Checks section for flagged claims", () => {
+		const result = getEditSystemPrompt();
+		expect(result).toContain("Checks");
+		expect(result).toContain("clean passage");
+	});
+
+	it("describes the optional leading Guidelines section for flagged guidelines", () => {
+		const result = getEditSystemPrompt();
+		expect(result).toContain("Guidelines section");
+		expect(result).toContain("mistaken, contradicts");
+	});
+
+	it("adapts effort to fragments vs finished prose", () => {
+		const result = getEditSystemPrompt();
+		expect(result).toContain("Match your effort");
+		expect(result).toContain("rough fragments");
+		expect(result).toContain("revise lightly");
+	});
+
+	it("explains the [§N] inline-note markers", () => {
+		const result = getEditSystemPrompt();
+		expect(result).toContain("[§N]");
+		expect(result).toContain("inline guideline");
+	});
+
+	it("tells the model to strip markers and %%…%% from the output", () => {
+		const result = getEditSystemPrompt();
+		expect(result).toContain("Strip every [§N]");
+		expect(result).toContain("scaffolding");
+	});
 });
 
 describe("buildEditInput", () => {
 	it("includes materials, guidelines, and the revision number", () => {
-		const result = buildEditInput("fragments here", "keep it formal", 2);
+		const result = buildEditInput("fragments here", [{ note: "keep it formal" }], 2);
 		expect(result).toContain("This is revision #2");
 		expect(result).toContain("<materials>");
 		expect(result).toContain("fragments here");
@@ -270,21 +314,30 @@ describe("buildEditInput", () => {
 		expect(result).toContain("keep it formal");
 	});
 
-	it("omits the guidelines block when guidelines are empty", () => {
-		const result = buildEditInput("fragments", "  ", 1);
+	it("omits the guidelines block when there are no notes", () => {
+		const result = buildEditInput("fragments", [], 1);
 		expect(result).toContain("<materials>");
 		expect(result).toContain("This is revision #1");
 		expect(result).not.toContain("<guidelines>");
 	});
 
-	it("trims materials and guidelines", () => {
-		const result = buildEditInput("  fragments  ", "  formal  ", 1);
+	it("trims materials", () => {
+		const result = buildEditInput("  fragments  ", [], 1);
 		expect(result).toContain("<materials>\nfragments\n</materials>");
-		expect(result).toContain("<guidelines>\nformal\n</guidelines>");
+	});
+
+	it("tags inline notes with their [§N] marker and lists whole-passage notes plainly", () => {
+		const result = buildEditInput("prose [§1] more", [
+			{ marker: "[§1]", note: "tighten this" },
+			{ note: "expand the whole thing" },
+		], 1);
+		expect(result).toContain("<guidelines>");
+		expect(result).toContain("- [§1] tighten this");
+		expect(result).toContain("- expand the whole thing");
 	});
 
 	it("includes surrounding context when provided", () => {
-		const result = buildEditInput("materials", "formal", 1, {
+		const result = buildEditInput("materials", [{ note: "formal" }], 1, {
 			before: "the previous paragraph",
 			after: "the next paragraph",
 		});
@@ -296,12 +349,12 @@ describe("buildEditInput", () => {
 	});
 
 	it("omits the context block when context is absent", () => {
-		const result = buildEditInput("materials", "", 1);
+		const result = buildEditInput("materials", [], 1);
 		expect(result).not.toContain("<context>");
 	});
 
 	it("marks a missing side as (none)", () => {
-		const result = buildEditInput("materials", "", 1, { before: "only before" });
+		const result = buildEditInput("materials", [], 1, { before: "only before" });
 		expect(result).toContain("Preceding paragraph:\nonly before");
 		expect(result).toContain("Following paragraph:\n(none)");
 	});
